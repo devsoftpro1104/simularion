@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Симулятор процессора — But How Do It Know?</title>
+<style>
+  :root {
+    --bg-0: #0a0d12;
+    --bg-1: #141923;
+    --bg-2: #1d232e;
+    --bg-3: #262d3a;
+    --line: #2a313c;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --text-mute: #6e7681;
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+    --enable: #f0a040;     /* output → bus */
+    --setsig: #56d364;     /* set ← bus */
+    --bus: #79b8ff;
+    --alu-on: #d2a8ff;
+    --warn: #ff7b72;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg-0); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px;
+    overflow: hidden;
+  }
+  #app {
+    display: flex; flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    display: flex; gap: 12px; align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-1); border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  header .title {
+    font-size: 14px; font-weight: 600; color: var(--accent);
+    margin-right: 10px;
+  }
+  button {
+    background: var(--bg-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 5px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: var(--bg-3); border-color: var(--text-dim); }
+  button:active { background: var(--accent-2); }
+  button.primary {
+    background: var(--accent-2); color: white; border-color: var(--accent);
+  }
+  button.primary:hover { background: var(--accent); }
+  select, input[type="range"] {
+    background: var(--bg-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 4px 6px; font: inherit;
+  }
+  input[type="range"] { padding: 0; height: 18px; }
+  header .gap { flex: 1; }
+  header label { color: var(--text-dim); }
+  header .status {
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    font-size: 12px; color: var(--text-dim);
+    padding: 4px 10px;
+    background: var(--bg-0);
+    border: 1px solid var(--line); border-radius: 4px;
+    min-width: 220px;
+  }
+
+  main {
+    flex: 1; min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 8px; padding: 8px;
+    overflow: hidden;
+  }
+
+  /* CPU column */
+  .cpu-col {
+    background: var(--bg-1); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .row { display: flex; gap: 8px; align-items: stretch; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .grow { flex: 1; }
+
+  h3 {
+    margin: 0 0 6px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--accent); border-bottom: 1px solid var(--line);
+    padding-bottom: 3px;
+  }
+
+  /* Stepper */
+  .stepper {
+    display: flex; gap: 4px;
+    padding: 6px 8px;
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .stepper .label {
+    color: var(--text-dim); font-size: 11px;
+    align-self: center; margin-right: 6px;
+  }
+  .stepper .step {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--bg-3);
+    font-family: ui-monospace, monospace;
+    font-size: 12px; color: var(--text-dim);
+    transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+  .stepper .step.active {
+    background: var(--accent-2); color: white;
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(88,166,255,0.5);
+  }
+
+  /* Flags */
+  .flags {
+    display: flex; gap: 4px;
+    padding: 6px 8px;
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .flags .label { color: var(--text-dim); font-size: 11px; align-self: center; margin-right: 6px; }
+  .flag {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--bg-3);
+    font-family: ui-monospace, monospace; font-weight: 600;
+    color: var(--text-dim);
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+  .flag.set {
+    background: var(--warn); color: #fff; border-color: var(--warn);
+    box-shadow: 0 0 8px rgba(255,123,114,0.5);
+  }
+  .flag.write {
+    box-shadow: 0 0 0 2px var(--setsig), 0 0 10px rgba(86,211,100,0.5);
+  }
+
+  /* Register box */
+  .reg {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 8px;
+    min-width: 96px;
+    display: flex; flex-direction: column; gap: 2px;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    position: relative;
+  }
+  .reg .name {
+    font-size: 10px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+  .reg .hex {
+    font-family: ui-monospace, monospace;
+    font-size: 16px; color: var(--text);
+    font-weight: 600;
+  }
+  .reg .bin {
+    font-family: ui-monospace, monospace;
+    font-size: 10px; color: var(--text-mute);
+    letter-spacing: 0.05em;
+  }
+  .reg .dec {
+    font-size: 10px; color: var(--text-mute);
+  }
+  .reg.enable {
+    border-color: var(--enable);
+    box-shadow: 0 0 0 1px var(--enable), 0 0 12px rgba(240,160,64,0.35);
+    background: rgba(240,160,64,0.06);
+  }
+  .reg.set {
+    border-color: var(--setsig);
+    box-shadow: 0 0 0 1px var(--setsig), 0 0 12px rgba(86,211,100,0.35);
+    background: rgba(86,211,100,0.06);
+  }
+  .reg.enable.set {
+    /* both */
+    box-shadow: 0 0 0 1px var(--enable), 0 0 0 2px var(--setsig), 0 0 14px rgba(240,160,64,0.4);
+  }
+
+  /* BUS */
+  .bus {
+    display: flex; align-items: center;
+    gap: 12px;
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 12px;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .bus.active {
+    border-color: var(--bus);
+    box-shadow: 0 0 0 1px var(--bus), 0 0 14px rgba(121,184,255,0.35);
+    background: rgba(121,184,255,0.07);
+  }
+  .bus .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--bus); font-weight: 700;
+    width: 38px;
+  }
+  .bus .hex {
+    font-family: ui-monospace, monospace;
+    font-size: 18px; font-weight: 600;
+    color: var(--text); min-width: 80px;
+  }
+  .bus .bin {
+    font-family: ui-monospace, monospace;
+    font-size: 12px; color: var(--text-mute);
+    letter-spacing: 0.04em;
+  }
+
+  /* ALU */
+  .alu-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px; align-items: center;
+  }
+  .alu {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 16px;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  .alu.active {
+    border-color: var(--alu-on);
+    box-shadow: 0 0 0 1px var(--alu-on), 0 0 14px rgba(210,168,255,0.35);
+    background: rgba(210,168,255,0.07);
+  }
+  .alu .title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--alu-on); font-weight: 700;
+  }
+  .alu .op {
+    font-family: ui-monospace, monospace;
+    font-size: 14px; color: var(--text); font-weight: 600;
+  }
+  .alu .ports {
+    display: flex; gap: 12px; margin-top: 2px;
+    font-family: ui-monospace, monospace; font-size: 11px;
+    color: var(--text-dim);
+  }
+  .alu .ports b { color: var(--text); }
+
+  .bus1-indicator {
+    display: inline-block;
+    padding: 2px 6px;
+    border: 1px solid var(--line); border-radius: 3px;
+    background: var(--bg-3);
+    font-family: ui-monospace, monospace; font-size: 11px;
+    color: var(--text-dim);
+  }
+  .bus1-indicator.active {
+    background: var(--enable); color: #1a1006; border-color: var(--enable);
+  }
+
+  /* RAM column */
+  .ram-col {
+    background: var(--bg-1); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .ram-grid {
+    display: grid;
+    grid-template-columns: 22px repeat(16, 1fr);
+    gap: 1px;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    font-size: 10px;
+    user-select: none;
+  }
+  .ram-grid .head {
+    color: var(--text-mute); text-align: center;
+    padding: 1px;
+  }
+  .ram-grid .cell {
+    background: var(--bg-2);
+    border: 1px solid transparent;
+    text-align: center;
+    padding: 1px 0;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+  }
+  .ram-grid .cell.has-data { color: var(--text); background: var(--bg-3); }
+  .ram-grid .cell.iar { background: rgba(88,166,255,0.30); color: #fff; border-color: var(--accent); }
+  .ram-grid .cell.mar { background: rgba(240,160,64,0.40); color: #fff; border-color: var(--enable); }
+  .ram-grid .cell.iar.mar { background: rgba(160,140,255,0.45); border-color: var(--alu-on); }
+  .ram-grid .cell.write {
+    box-shadow: 0 0 0 2px var(--setsig);
+    background: rgba(86,211,100,0.40); color: #fff;
+  }
+  .ram-grid .cell:hover { outline: 1px solid var(--text-dim); }
+
+  /* Asm listing */
+  .asm-listing {
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    line-height: 1.45;
+  }
+  .asm-listing .line {
+    display: grid;
+    grid-template-columns: 36px 60px 1fr;
+    gap: 8px;
+    padding: 1px 4px;
+    color: var(--text-dim);
+    border-radius: 2px;
+  }
+  .asm-listing .line .addr { color: var(--text-mute); }
+  .asm-listing .line .bytes { color: var(--accent); }
+  .asm-listing .line .mnem { color: var(--text); }
+  .asm-listing .line.cur {
+    background: rgba(88,166,255,0.20);
+    color: var(--text);
+  }
+
+  .desc {
+    font-size: 12px; color: var(--text-dim);
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    line-height: 1.5;
+  }
+  .desc b { color: var(--text); }
+  .desc kbd {
+    background: var(--bg-3); border: 1px solid var(--line);
+    border-radius: 3px; padding: 0 4px;
+    font-family: ui-monospace, monospace; font-size: 11px;
+  }
+
+  .legend-row {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    font-size: 11px; color: var(--text-dim);
+    padding: 4px 0;
+  }
+  .legend-row .swatch {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title">CPU-симулятор по книге «But How Do It Know?»</div>
+    <button id="btnReset">Сброс</button>
+    <button id="btnStep">Шаг (1 такт)</button>
+    <button id="btnStepI">Шаг (1 инструкция)</button>
+    <button id="btnRun" class="primary">▶ Старт</button>
+    <label>Скорость:</label>
+    <input id="speed" type="range" min="1" max="100" value="40">
+    <label>Программа:</label>
+    <select id="program"></select>
+    <div class="gap"></div>
+    <div class="status" id="status">Готов. Выберите программу.</div>
+  </header>
+  <main>
+    <section class="cpu-col">
+      <div class="row">
+        <div class="stepper" id="stepper">
+          <span class="label">STEP</span>
+        </div>
+        <div class="flags" id="flags">
+          <span class="label">FLAGS</span>
+          <div class="flag" data-f="C">C</div>
+          <div class="flag" data-f="A">A</div>
+          <div class="flag" data-f="E">E</div>
+          <div class="flag" data-f="Z">Z</div>
+        </div>
+        <div class="grow"></div>
+      </div>
+
+      <div>
+        <h3>Регистры общего назначения</h3>
+        <div class="row" id="gp-regs"></div>
+      </div>
+
+      <div>
+        <h3>Управляющие регистры</h3>
+        <div class="row" id="ctl-regs"></div>
+      </div>
+
+      <div>
+        <h3>Шина</h3>
+        <div class="bus" id="bus">
+          <span class="label">BUS</span>
+          <span class="hex" id="bus-hex">0x00</span>
+          <span class="bin" id="bus-bin">00000000</span>
+          <div class="grow"></div>
+          <span class="bus1-indicator" id="bus1">BUS1 = 1 (на ALU&nbsp;B)</span>
+        </div>
+      </div>
+
+      <div>
+        <h3>АЛУ и аккумулятор</h3>
+        <div class="alu-row">
+          <div class="reg" id="reg-TMP">
+            <div class="name">TMP &nbsp;→&nbsp; ALU&nbsp;A</div>
+            <div class="hex">0x00</div>
+            <div class="bin">00000000</div>
+          </div>
+          <div class="alu" id="alu">
+            <div class="title">ALU</div>
+            <div class="op" id="alu-op">ADD</div>
+            <div class="ports">A=<b id="alu-a">0x00</b> B=<b id="alu-b">0x00</b> Cin=<b id="alu-cin">0</b></div>
+            <div class="ports">→ <b id="alu-out">0x00</b></div>
+          </div>
+          <div class="reg" id="reg-ACC">
+            <div class="name">ACC&nbsp;←&nbsp;ALU</div>
+            <div class="hex">0x00</div>
+            <div class="bin">00000000</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="desc" id="micro-desc">
+        Нажмите <kbd>Шаг</kbd>, чтобы выполнить один такт. Каждая инструкция исполняется за&nbsp;6 шагов: первые три (fetch) одинаковые для всех — IAR→MAR, RAM→IR, ACC→IAR; шаги 4-6 зависят от опкода в&nbsp;IR.
+      </div>
+
+      <div class="legend-row">
+        <span><span class="swatch" style="background:#f0a040"></span>выход на шину (enable)</span>
+        <span><span class="swatch" style="background:#56d364"></span>загрузка с шины (set)</span>
+        <span><span class="swatch" style="background:#79b8ff"></span>шина активна</span>
+        <span><span class="swatch" style="background:#d2a8ff"></span>ALU работает</span>
+      </div>
+    </section>
+
+    <section class="ram-col">
+      <div>
+        <h3>RAM (256 байт, hex)</h3>
+        <div class="ram-grid" id="ram"></div>
+        <div class="legend-row" style="margin-top:6px">
+          <span><span class="swatch" style="background:rgba(88,166,255,0.5)"></span>IAR</span>
+          <span><span class="swatch" style="background:rgba(240,160,64,0.5)"></span>MAR</span>
+          <span><span class="swatch" style="background:rgba(86,211,100,0.5)"></span>запись</span>
+        </div>
+      </div>
+      <div>
+        <h3>Дизассемблер</h3>
+        <div class="asm-listing" id="asm"></div>
+      </div>
+      <div class="desc" id="program-desc"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================
+// Архитектура из книги J. Clark Scott, "But How Do It Know?"
+// 8-битный процессор Scott CPU.
+// Регистры: R0-R3 (по 2 бита адреса), IAR, IR, MAR, ACC, TMP,
+// FLAGS (4 бита: C/A/E/Z), 256 байт RAM.
+// 6-шаговый цикл: 1-3 fetch, 4-6 execute.
+// ============================================================
+
+const ALU_NAMES = ["ADD", "SHR", "SHL", "NOT", "AND", "OR", "XOR", "CMP"];
+
+// CPU state
+const cpu = {
+  R: [0, 0, 0, 0],
+  IAR: 0, IR: 0, MAR: 0,
+  ACC: 0, TMP: 0,
+  FLAGS: { C: 0, A: 0, E: 0, Z: 0 },
+  RAM: new Uint8Array(256),
+  step: 1,
+  cycle: 0,
+  bus: 0,
+  busActive: false,
+  sig: makeSignals(),
+  desc: '',
+};
+
+function makeSignals() {
+  return {
+    IAR_e: 0, IAR_s: 0,
+    IR_s: 0,
+    MAR_s: 0,
+    ACC_e: 0, ACC_s: 0,
+    TMP_s: 0,
+    FLAGS_s: 0,
+    R_e: [0,0,0,0], R_s: [0,0,0,0],
+    RAM_e: 0, RAM_s: 0,
+    BUS1: 0,
+    ALU_op: 0,
+    ALU_active: 0,
+  };
+}
+
+// ============================================================
+// ALU — комбинационный блок
+// ============================================================
+function aluCompute(op, a, b, cIn) {
+  let value = 0, carry = 0;
+  switch (op) {
+    case 0: { const s = a + b + cIn; value = s & 0xFF; carry = (s >> 8) & 1; break; }
+    case 1: value = ((a >> 1) | ((cIn & 1) << 7)) & 0xFF; carry = a & 1; break;
+    case 2: value = ((a << 1) | (cIn & 1)) & 0xFF; carry = (a >> 7) & 1; break;
+    case 3: value = (~a) & 0xFF; break;
+    case 4: value = a & b; break;
+    case 5: value = a | b; break;
+    case 6: value = a ^ b; break;
+    case 7: value = a ^ b; break; // CMP — результат не пишется в ACC, но Z-флаг считаем
+  }
+  return {
+    value, carry,
+    equal:  (a === b) ? 1 : 0,
+    larger: (a > b)   ? 1 : 0,
+    zero:   (value === 0) ? 1 : 0,
+  };
+}
+
+// ============================================================
+// Микро-шаг: устанавливаем сигналы, считаем шину, обновляем регистры
+// ============================================================
+function microStep() {
+  cpu.sig = makeSignals();
+
+  if (cpu.step === 1) {
+    // FETCH: IAR → MAR, IAR+1 → ACC (через ALU+BUS1), копия IAR в TMP
+    cpu.sig.IAR_e = 1;
+    cpu.sig.MAR_s = 1;
+    cpu.sig.TMP_s = 1;
+    cpu.sig.BUS1  = 1;
+    cpu.sig.ALU_op = 0;
+    cpu.sig.ALU_active = 1;
+    cpu.sig.ACC_s = 1;
+    cpu.desc = "FETCH 1: IAR → MAR; IAR+1 → ACC (ALU=ADD, B=BUS1=1)";
+  }
+  else if (cpu.step === 2) {
+    cpu.sig.RAM_e = 1;
+    cpu.sig.IR_s  = 1;
+    cpu.desc = "FETCH 2: RAM[MAR] → IR";
+  }
+  else if (cpu.step === 3) {
+    cpu.sig.ACC_e = 1;
+    cpu.sig.IAR_s = 1;
+    cpu.desc = "FETCH 3: ACC (=IAR+1) → IAR";
+  }
+  else {
+    decodeAndExecute();
+  }
+
+  applySignals();
+
+  cpu.step++;
+  if (cpu.step > 6) {
+    cpu.step = 1;
+    cpu.cycle++;
+  }
+}
+
+function decodeAndExecute() {
+  const ir = cpu.IR;
+  const isAlu = (ir & 0x80) !== 0;
+  const aluOp = (ir >> 4) & 0x07;
+  const opType = (ir >> 4) & 0x07;     // для не-ALU инструкций
+  const regA = (ir >> 2) & 0x03;
+  const regB = ir & 0x03;
+
+  if (isAlu) {
+    if (cpu.step === 4) {
+      cpu.sig.R_e[regA] = 1;
+      cpu.sig.TMP_s = 1;
+      cpu.desc = `ALU: R${regA} → TMP (вход A для ALU)`;
+    } else if (cpu.step === 5) {
+      cpu.sig.R_e[regB] = 1;
+      cpu.sig.ALU_op = aluOp;
+      cpu.sig.ALU_active = 1;
+      cpu.sig.ACC_s = 1;
+      cpu.sig.FLAGS_s = 1;
+      cpu.desc = `ALU: ${ALU_NAMES[aluOp]} TMP, R${regB} → ACC; флаги ← ALU`;
+    } else if (cpu.step === 6) {
+      if (aluOp !== 7) {                  // не CMP — записать ACC в RegB
+        cpu.sig.ACC_e = 1;
+        cpu.sig.R_s[regB] = 1;
+        cpu.desc = `ALU: ACC → R${regB}`;
+      } else {
+        cpu.desc = "CMP: результат не сохраняется (только флаги)";
+      }
+    }
+  } else {
+    switch (opType) {
+      case 0: // LD: RAM[regA] → regB
+        if (cpu.step === 4) {
+          cpu.sig.R_e[regA] = 1; cpu.sig.MAR_s = 1;
+          cpu.desc = `LD: R${regA} → MAR`;
+        } else if (cpu.step === 5) {
+          cpu.sig.RAM_e = 1; cpu.sig.R_s[regB] = 1;
+          cpu.desc = `LD: RAM[MAR] → R${regB}`;
+        } else cpu.desc = "LD: шаг не задействован";
+        break;
+      case 1: // ST: regB → RAM[regA]
+        if (cpu.step === 4) {
+          cpu.sig.R_e[regA] = 1; cpu.sig.MAR_s = 1;
+          cpu.desc = `ST: R${regA} → MAR`;
+        } else if (cpu.step === 5) {
+          cpu.sig.R_e[regB] = 1; cpu.sig.RAM_s = 1;
+          cpu.desc = `ST: R${regB} → RAM[MAR]`;
+        } else cpu.desc = "ST: шаг не задействован";
+        break;
+      case 2: // DATA: immediate → regB
+        if (cpu.step === 4) {
+          cpu.sig.IAR_e = 1; cpu.sig.MAR_s = 1; cpu.sig.TMP_s = 1;
+          cpu.sig.BUS1 = 1; cpu.sig.ALU_op = 0; cpu.sig.ALU_active = 1;
+          cpu.sig.ACC_s = 1;
+          cpu.desc = "DATA: IAR → MAR; IAR+1 → ACC";
+        } else if (cpu.step === 5) {
+          cpu.sig.RAM_e = 1; cpu.sig.R_s[regB] = 1;
+          cpu.desc = `DATA: RAM[MAR] (immediate) → R${regB}`;
+        } else if (cpu.step === 6) {
+          cpu.sig.ACC_e = 1; cpu.sig.IAR_s = 1;
+          cpu.desc = "DATA: ACC (=старый IAR+1) → IAR (пропускаем байт-immediate)";
+        }
+        break;
+      case 3: // JMPR: regB → IAR
+        if (cpu.step === 4) {
+          cpu.sig.R_e[regB] = 1; cpu.sig.IAR_s = 1;
+          cpu.desc = `JMPR: R${regB} → IAR`;
+        } else cpu.desc = "JMPR: шаг не задействован";
+        break;
+      case 4: // JMP: RAM[next] → IAR
+        if (cpu.step === 4) {
+          cpu.sig.IAR_e = 1; cpu.sig.MAR_s = 1;
+          cpu.desc = "JMP: IAR → MAR (читаем адрес перехода)";
+        } else if (cpu.step === 5) {
+          cpu.sig.RAM_e = 1; cpu.sig.IAR_s = 1;
+          cpu.desc = "JMP: RAM[MAR] → IAR";
+        } else cpu.desc = "JMP: шаг не задействован";
+        break;
+      case 5: // JMPIF
+        if (cpu.step === 4) {
+          cpu.sig.IAR_e = 1; cpu.sig.MAR_s = 1; cpu.sig.TMP_s = 1;
+          cpu.sig.BUS1 = 1; cpu.sig.ALU_op = 0; cpu.sig.ALU_active = 1;
+          cpu.sig.ACC_s = 1;
+          cpu.desc = "JMPIF: IAR → MAR; IAR+1 → ACC";
+        } else if (cpu.step === 5) {
+          cpu.sig.ACC_e = 1; cpu.sig.IAR_s = 1;
+          cpu.desc = "JMPIF: ACC → IAR (пропускаем immediate; если флаг — перепишем в шаге 6)";
+        } else if (cpu.step === 6) {
+          const cBit = (ir >> 3) & 1, aBit = (ir >> 2) & 1;
+          const eBit = (ir >> 1) & 1, zBit =  ir       & 1;
+          const cond = (cBit & cpu.FLAGS.C) | (aBit & cpu.FLAGS.A)
+                     | (eBit & cpu.FLAGS.E) | (zBit & cpu.FLAGS.Z);
+          if (cond) {
+            cpu.sig.RAM_e = 1; cpu.sig.IAR_s = 1;
+            cpu.desc = "JMPIF: условие выполнено → RAM[MAR] → IAR (прыгаем)";
+          } else {
+            cpu.desc = "JMPIF: условие НЕ выполнено (продолжаем)";
+          }
+        }
+        break;
+      case 6: // CLF
+        if (cpu.step === 4) {
+          cpu.sig.BUS1 = 1; cpu.sig.ALU_op = 0; cpu.sig.ALU_active = 1;
+          cpu.sig.TMP_s = 1; cpu.sig.FLAGS_s = 1;
+          cpu.desc = "CLF: TMP←0 (нет enable), B=BUS1=1, ALU=ADD → флаги обнуляются";
+        } else cpu.desc = "CLF: шаг не задействован";
+        break;
+      default:
+        cpu.desc = `неизвестный опкод 0x${ir.toString(16).padStart(2,'0')}`;
+    }
+  }
+}
+
+// Применить сигналы: посчитать шину, обновить регистры
+function applySignals() {
+  // 1. Определяем значение шины (по «enable» сигналам)
+  let bus = 0;
+  let active = false;
+  if (cpu.sig.IAR_e) { bus = cpu.IAR; active = true; }
+  if (cpu.sig.ACC_e) { bus = cpu.ACC; active = true; }
+  if (cpu.sig.RAM_e) { bus = cpu.RAM[cpu.MAR]; active = true; }
+  for (let i = 0; i < 4; i++) {
+    if (cpu.sig.R_e[i]) { bus = cpu.R[i]; active = true; }
+  }
+  cpu.bus = bus;
+  cpu.busActive = active;
+
+  // 2. TMP должен обновиться ДО ALU, т.к. ALU.A = TMP
+  if (cpu.sig.TMP_s) cpu.TMP = bus;
+
+  // 3. ALU комбинационно вычисляет
+  const a = cpu.TMP;
+  const b = cpu.sig.BUS1 ? 1 : bus;
+  const cIn = cpu.FLAGS.C;
+  const aluRes = aluCompute(cpu.sig.ALU_op, a, b, cIn);
+  cpu.aluLast = { a, b, cIn, op: cpu.sig.ALU_op, value: aluRes.value };
+
+  // 4. Остальные регистры
+  if (cpu.sig.MAR_s)  cpu.MAR = bus;
+  if (cpu.sig.IR_s)   cpu.IR  = bus;
+  if (cpu.sig.IAR_s)  cpu.IAR = bus;
+  if (cpu.sig.ACC_s)  cpu.ACC = aluRes.value;
+  if (cpu.sig.RAM_s)  {
+    if (cpu.RAM[cpu.MAR] !== bus) ramDirty = true;
+    cpu.RAM[cpu.MAR] = bus;
+  }
+  for (let i = 0; i < 4; i++) {
+    if (cpu.sig.R_s[i]) cpu.R[i] = bus;
+  }
+  if (cpu.sig.FLAGS_s) {
+    cpu.FLAGS.C = aluRes.carry;
+    cpu.FLAGS.A = aluRes.larger;
+    cpu.FLAGS.E = aluRes.equal;
+    cpu.FLAGS.Z = aluRes.zero;
+  }
+}
+
+function resetCPU() {
+  cpu.R = [0, 0, 0, 0];
+  cpu.IAR = 0; cpu.IR = 0; cpu.MAR = 0;
+  cpu.ACC = 0; cpu.TMP = 0;
+  cpu.FLAGS = { C: 0, A: 0, E: 0, Z: 0 };
+  cpu.step = 1; cpu.cycle = 0;
+  cpu.bus = 0; cpu.busActive = false;
+  cpu.sig = makeSignals();
+  cpu.desc = "Сброс. Готов к старту.";
+  cpu.aluLast = { a: 0, b: 0, cIn: 0, op: 0, value: 0 };
+}
+
+// ============================================================
+// Дизассемблер
+// ============================================================
+function disasm(bytes, startAddr = 0) {
+  const out = [];
+  let i = 0;
+  while (i < bytes.length) {
+    const a = startAddr + i;
+    const b = bytes[i];
+    const isAlu = (b & 0x80) !== 0;
+    const opType = (b >> 4) & 0x07;
+    const rA = (b >> 2) & 0x03;
+    const rB = b & 0x03;
+
+    let mnem = "", consumed = 1, byteList = [b];
+
+    if (isAlu) {
+      const op = (b >> 4) & 0x07;
+      if (op === 3) mnem = `NOT R${rA},R${rB}`;
+      else if (op === 7) mnem = `CMP R${rA},R${rB}`;
+      else mnem = `${ALU_NAMES[op]} R${rA},R${rB}`;
+    } else {
+      switch (opType) {
+        case 0: mnem = `LD  R${rA},R${rB}`; break;
+        case 1: mnem = `ST  R${rA},R${rB}`; break;
+        case 2: {
+          const imm = bytes[i+1] ?? 0;
+          mnem = `DATA R${rB},0x${hex2(imm)}`;
+          consumed = 2; byteList = [b, imm];
+          break;
+        }
+        case 3: mnem = `JMPR R${rB}`; break;
+        case 4: {
+          const tgt = bytes[i+1] ?? 0;
+          mnem = `JMP 0x${hex2(tgt)}`;
+          consumed = 2; byteList = [b, tgt];
+          break;
+        }
+        case 5: {
+          const tgt = bytes[i+1] ?? 0;
+          const c = (b>>3)&1, ar = (b>>2)&1, e = (b>>1)&1, z = b&1;
+          let cond = "";
+          if (c) cond += "C"; if (ar) cond += "A";
+          if (e) cond += "E"; if (z) cond += "Z";
+          if (!cond) cond = "—";
+          mnem = `JMPIF ${cond} 0x${hex2(tgt)}`;
+          consumed = 2; byteList = [b, tgt];
+          break;
+        }
+        case 6: mnem = "CLF"; break;
+        default: mnem = "(зарезервировано)";
+      }
+    }
+
+    out.push({ addr: a, bytes: byteList, mnem });
+    i += consumed;
+  }
+  return out;
+}
+
+// ============================================================
+// Программы — assembled bytes
+// ============================================================
+const PROGRAMS = {
+  add: {
+    name: "Сложение 5+3",
+    desc: "Загружает 5 в R0 и 3 в R1, складывает: R1 ← R0+R1. Затем зацикливается. После исполнения R1 = 8.",
+    bytes: [
+      0x20, 0x05,   // 0x00 DATA R0, 5
+      0x21, 0x03,   // 0x02 DATA R1, 3
+      0x80 | 0x01,  // 0x04 ADD R0,R1  (1 000 00 01 = 0x81)
+      0x40, 0x05,   // 0x05 JMP 0x05  (halt)
+    ],
+  },
+  mul: {
+    name: "Умножение 5×3 (повторное сложение)",
+    desc: "R0 — счётчик (3), R1 — слагаемое (5), R2 — результат, R3 = 0xFF (-1). На каждой итерации R2+=R1, R0+=R3 (-1). При R0=0 ставится Z, JZ → выход. Итог: R2 = 15.",
+    bytes: [
+      0x20, 0x03,   // 0x00 DATA R0, 3   counter = 3
+      0x21, 0x05,   // 0x02 DATA R1, 5   summand = 5
+      0x22, 0x00,   // 0x04 DATA R2, 0   result = 0
+      0x23, 0xFF,   // 0x06 DATA R3, 0xFF  -1
+      // loop start = 0x08
+      0x60,         // 0x08 CLF
+      0x86,         // 0x09 ADD R1,R2  (1 000 01 10)
+      0x60,         // 0x0A CLF
+      0x8C,         // 0x0B ADD R3,R0  (1 000 11 00)  R0 -= 1
+      0x51, 0x10,   // 0x0C JZ 0x10    if Z, jump to halt
+      0x40, 0x08,   // 0x0E JMP 0x08   loop
+      0x40, 0x10,   // 0x10 JMP 0x10   halt
+    ],
+  },
+  cmp: {
+    name: "Сравнение и ветвление",
+    desc: "R0=10, R1=7. CMP R0,R1 устанавливает A (R0>R1). JA — прыжок в ветку, иначе другая. В демонстрируемом случае R2 ← 0xAA (ветка «больше»).",
+    bytes: [
+      0x20, 0x0A,   // 0x00 DATA R0, 10
+      0x21, 0x07,   // 0x02 DATA R1, 7
+      0x60,         // 0x04 CLF
+      0xF1,         // 0x05 CMP R0,R1  (1 111 00 01)
+      0x54, 0x0C,   // 0x06 JA 0x0C
+      0x22, 0x55,   // 0x08 DATA R2, 0x55  (ветка "не больше")
+      0x40, 0x0E,   // 0x0A JMP 0x0E
+      0x22, 0xAA,   // 0x0C DATA R2, 0xAA  (ветка "R0>R1")
+      0x40, 0x0E,   // 0x0E JMP 0x0E  halt
+    ],
+  },
+  empty: {
+    name: "Пустая RAM",
+    desc: "Все байты обнулены. 0x00 = LD R0,R0 — бесконечно загружает RAM[R0]=0 в R0; полезно для эксперимента.",
+    bytes: [],
+  },
+};
+
+// ============================================================
+// UI
+// ============================================================
+const $ = id => document.getElementById(id);
+const hex2 = v => v.toString(16).toUpperCase().padStart(2, '0');
+const bin8 = v => v.toString(2).padStart(8, '0');
+
+function buildStepper() {
+  const el = $("stepper");
+  for (let i = 1; i <= 6; i++) {
+    const d = document.createElement("div");
+    d.className = "step"; d.dataset.n = i; d.textContent = i;
+    el.appendChild(d);
+  }
+}
+
+function buildRegisters() {
+  const gp = $("gp-regs");
+  for (let i = 0; i < 4; i++) {
+    const div = document.createElement("div");
+    div.className = "reg"; div.id = `reg-R${i}`;
+    div.innerHTML = `<div class="name">R${i}</div>
+                     <div class="hex">0x00</div>
+                     <div class="bin">00000000</div>
+                     <div class="dec">= 0</div>`;
+    gp.appendChild(div);
+  }
+  const ctl = $("ctl-regs");
+  for (const id of ["IAR", "IR", "MAR"]) {
+    const div = document.createElement("div");
+    div.className = "reg"; div.id = `reg-${id}`;
+    let label = id;
+    if (id === "IAR") label = "IAR (PC)";
+    if (id === "IR")  label = "IR (instr)";
+    if (id === "MAR") label = "MAR (addr)";
+    div.innerHTML = `<div class="name">${label}</div>
+                     <div class="hex">0x00</div>
+                     <div class="bin">00000000</div>`;
+    ctl.appendChild(div);
+  }
+}
+
+function buildRAM() {
+  const r = $("ram");
+  // headers
+  const corner = document.createElement("div");
+  corner.className = "head"; corner.textContent = "";
+  r.appendChild(corner);
+  for (let c = 0; c < 16; c++) {
+    const h = document.createElement("div");
+    h.className = "head"; h.textContent = c.toString(16).toUpperCase();
+    r.appendChild(h);
+  }
+  for (let row = 0; row < 16; row++) {
+    const rh = document.createElement("div");
+    rh.className = "head";
+    rh.textContent = row.toString(16).toUpperCase() + "0";
+    r.appendChild(rh);
+    for (let c = 0; c < 16; c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.addr = row * 16 + c;
+      cell.textContent = "00";
+      cell.addEventListener("click", () => editCell(row * 16 + c));
+      r.appendChild(cell);
+    }
+  }
+}
+
+function editCell(addr) {
+  const cur = cpu.RAM[addr];
+  const v = prompt(`Введите значение (hex 0..FF) для адреса 0x${hex2(addr)}:`, hex2(cur));
+  if (v == null) return;
+  const n = parseInt(v, 16);
+  if (isNaN(n) || n < 0 || n > 255) return;
+  cpu.RAM[addr] = n;
+  ramDirty = true;
+  render();
+}
+
+function loadProgram(key) {
+  cpu.RAM.fill(0);
+  const prg = PROGRAMS[key];
+  for (let i = 0; i < prg.bytes.length; i++) cpu.RAM[i] = prg.bytes[i];
+  resetCPU();
+  ramDirty = true;
+  $("program-desc").innerHTML = `<b>${prg.name}.</b> ${prg.desc}`;
+  render();
+}
+
+// === Cached DOM refs (filled by cacheRefs()) ===
+const REFS = { regs: {}, ram: [], steps: [], flags: {} };
+let ramDirty = true;
+let asmDom = [];        // [{addr, firstByte, el}]
+let lastCurAsm = null;  // last highlighted asm line element
+
+function cacheRefs() {
+  for (let i = 0; i < 4; i++) {
+    const el = $(`reg-R${i}`);
+    REFS.regs[`R${i}`] = { el,
+      hex: el.querySelector('.hex'), bin: el.querySelector('.bin'), dec: el.querySelector('.dec') };
+  }
+  for (const id of ['IAR', 'IR', 'MAR', 'TMP', 'ACC']) {
+    const el = $(`reg-${id}`);
+    REFS.regs[id] = { el,
+      hex: el.querySelector('.hex'), bin: el.querySelector('.bin') };
+  }
+  REFS.bus  = { el: $('bus'), hex: $('bus-hex'), bin: $('bus-bin'), bus1: $('bus1') };
+  REFS.alu  = { el: $('alu'), op: $('alu-op'),
+                a: $('alu-a'), b: $('alu-b'), cin: $('alu-cin'), out: $('alu-out') };
+  REFS.status    = $('status');
+  REFS.microDesc = $('micro-desc');
+  REFS.asm       = $('asm');
+  for (const f of ['C','A','E','Z']) {
+    REFS.flags[f] = document.querySelector(`.flag[data-f="${f}"]`);
+  }
+  for (let i = 1; i <= 6; i++) {
+    REFS.steps.push(document.querySelector(`.stepper .step[data-n="${i}"]`));
+  }
+  for (let a = 0; a < 256; a++) {
+    REFS.ram.push(document.querySelector(`.ram-grid .cell[data-addr="${a}"]`));
+  }
+}
+
+function rebuildAsmDom() {
+  let lastNonZero = 0;
+  for (let i = 0; i < 256; i++) if (cpu.RAM[i] !== 0) lastNonZero = i;
+  const upTo = Math.max(lastNonZero + 4, 0x3F);
+  const bytes = Array.from(cpu.RAM.slice(0, upTo + 1));
+  const lines = disasm(bytes, 0);
+
+  REFS.asm.replaceChildren();
+  asmDom = [];
+  lastCurAsm = null;
+  for (const ln of lines) {
+    const div = document.createElement('div');
+    div.className = 'line';
+    const a = document.createElement('span'); a.className = 'addr';
+    a.textContent = '0x' + hex2(ln.addr);
+    const b = document.createElement('span'); b.className = 'bytes';
+    b.textContent = ln.bytes.map(hex2).join(' ');
+    const m = document.createElement('span'); m.className = 'mnem';
+    m.textContent = ln.mnem;
+    div.appendChild(a); div.appendChild(b); div.appendChild(m);
+    REFS.asm.appendChild(div);
+    asmDom.push({ addr: ln.addr, firstByte: ln.bytes[0], el: div });
+  }
+  ramDirty = false;
+}
+
+function highlightAsmCurrent() {
+  let curAddr = -1;
+  if (cpu.step === 1) curAddr = cpu.IAR;
+  else {
+    let best = -1;
+    for (const ln of asmDom) {
+      if (ln.firstByte === cpu.IR && ln.addr < cpu.IAR + 1 && ln.addr > best) best = ln.addr;
+    }
+    if (best >= 0) curAddr = best;
+  }
+  let target = null;
+  for (const ln of asmDom) {
+    if (ln.addr === curAddr) { target = ln.el; break; }
+  }
+  if (target === lastCurAsm) return;
+  if (lastCurAsm) lastCurAsm.classList.remove('cur');
+  if (target) target.classList.add('cur');
+  lastCurAsm = target;
+}
+
+// Tracks last text/class to skip identical writes (less repaint)
+const _last = { reg: {}, alu: {}, ram: new Uint8Array(256), iar: -1, mar: -1, ramS: false };
+
+function setText(node, val) {
+  if (node.textContent !== val) node.textContent = val;
+}
+function setClass(node, name, on) {
+  if (node.classList.contains(name) !== on) node.classList.toggle(name, on);
+}
+
+function render() {
+  // stepper — toggle only the active step
+  for (let i = 0; i < 6; i++) {
+    setClass(REFS.steps[i], "active", (i + 1) === cpu.step);
+  }
+
+  // flags
+  for (const f of ["C", "A", "E", "Z"]) {
+    setClass(REFS.flags[f], "set", cpu.FLAGS[f] === 1);
+    setClass(REFS.flags[f], "write", !!cpu.sig.FLAGS_s);
+  }
+
+  // GP regs
+  for (let i = 0; i < 4; i++) {
+    const r = REFS.regs[`R${i}`];
+    const v = cpu.R[i];
+    setText(r.hex, "0x" + hex2(v));
+    setText(r.bin, bin8(v));
+    setText(r.dec, "= " + v);
+    setClass(r.el, "enable", !!cpu.sig.R_e[i]);
+    setClass(r.el, "set",    !!cpu.sig.R_s[i]);
+  }
+
+  // ctl regs
+  const ctl = [
+    ["IAR", cpu.IAR, !!cpu.sig.IAR_e, !!cpu.sig.IAR_s],
+    ["IR",  cpu.IR,  false,           !!cpu.sig.IR_s],
+    ["MAR", cpu.MAR, false,           !!cpu.sig.MAR_s],
+  ];
+  for (const [id, val, eOn, sOn] of ctl) {
+    const r = REFS.regs[id];
+    setText(r.hex, "0x" + hex2(val));
+    setText(r.bin, bin8(val));
+    setClass(r.el, "enable", eOn);
+    setClass(r.el, "set",    sOn);
+  }
+
+  // TMP & ACC
+  const rT = REFS.regs.TMP;
+  setText(rT.hex, "0x" + hex2(cpu.TMP));
+  setText(rT.bin, bin8(cpu.TMP));
+  setClass(rT.el, "set", !!cpu.sig.TMP_s);
+
+  const rA = REFS.regs.ACC;
+  setText(rA.hex, "0x" + hex2(cpu.ACC));
+  setText(rA.bin, bin8(cpu.ACC));
+  setClass(rA.el, "enable", !!cpu.sig.ACC_e);
+  setClass(rA.el, "set",    !!cpu.sig.ACC_s);
+
+  // BUS
+  setText(REFS.bus.hex, "0x" + hex2(cpu.bus));
+  setText(REFS.bus.bin, bin8(cpu.bus));
+  setClass(REFS.bus.el,  "active", cpu.busActive || !!cpu.sig.BUS1);
+  setClass(REFS.bus.bus1, "active", !!cpu.sig.BUS1);
+
+  // ALU
+  setClass(REFS.alu.el, "active", !!cpu.sig.ALU_active);
+  setText(REFS.alu.op, ALU_NAMES[cpu.sig.ALU_op]);
+  if (cpu.aluLast) {
+    setText(REFS.alu.a,   "0x" + hex2(cpu.aluLast.a));
+    setText(REFS.alu.b,   "0x" + hex2(cpu.aluLast.b));
+    setText(REFS.alu.cin, String(cpu.aluLast.cIn));
+    setText(REFS.alu.out, "0x" + hex2(cpu.aluLast.value));
+  }
+
+  // RAM cells — обновляем только то, что изменилось
+  for (let a = 0; a < 256; a++) {
+    const cell = REFS.ram[a];
+    const v = cpu.RAM[a];
+    if (_last.ram[a] !== v) {
+      cell.textContent = hex2(v);
+      setClass(cell, "has-data", v !== 0);
+      _last.ram[a] = v;
+    }
+  }
+  // снять прежние подсветки IAR/MAR/write только если адрес сменился
+  if (_last.iar !== cpu.IAR) {
+    if (_last.iar >= 0) REFS.ram[_last.iar].classList.remove("iar");
+    REFS.ram[cpu.IAR].classList.add("iar");
+    _last.iar = cpu.IAR;
+  }
+  if (_last.mar !== cpu.MAR) {
+    if (_last.mar >= 0) REFS.ram[_last.mar].classList.remove("mar");
+    REFS.ram[cpu.MAR].classList.add("mar");
+    _last.mar = cpu.MAR;
+  }
+  const ramSNow = !!cpu.sig.RAM_s;
+  if (_last.ramS !== ramSNow) {
+    if (_last.ramS) REFS.ram[cpu.MAR].classList.remove("write");
+    if (ramSNow)    REFS.ram[cpu.MAR].classList.add("write");
+    _last.ramS = ramSNow;
+  }
+
+  // status
+  setText(REFS.status,
+    `Cycle ${cpu.cycle}  ·  Step ${cpu.step}/6  ·  ${cpu.desc}`);
+
+  // micro-desc — обычный текст, без innerHTML, чтобы не парсить каждый кадр
+  setText(REFS.microDesc, cpu.desc);
+
+  // disasm: пересобираем только при изменении RAM
+  if (ramDirty) rebuildAsmDom();
+  highlightAsmCurrent();
+}
+
+// ============================================================
+// Run loop
+// ============================================================
+let running = false;
+let runAccumulator = 0;
+let lastTime = 0;
+
+function step1() {
+  microStep();
+  render();
+}
+
+function stepInstruction() {
+  // выполнить столько микро-шагов, чтобы текущая инструкция завершилась
+  // т.е. дойти до начала следующего цикла
+  let safety = 12;
+  do {
+    microStep();
+    safety--;
+  } while (cpu.step !== 1 && safety > 0);
+  render();
+}
+
+function tick(t) {
+  if (!running) return;
+  if (!lastTime) lastTime = t;
+  const dt = (t - lastTime) / 1000;
+  lastTime = t;
+
+  // speed: 1..100 → 1..200 микро-шагов в секунду
+  const speed = +$("speed").value;
+  const stepsPerSec = Math.pow(speed / 50, 2.2) * 60;  // 1→0..., 50→60, 100→~280
+  runAccumulator += dt * stepsPerSec;
+  let n = runAccumulator | 0;
+  if (n > 50) n = 50;
+  runAccumulator -= n;
+  while (n-- > 0) microStep();
+  render();
+  requestAnimationFrame(tick);
+}
+
+function toggleRun() {
+  running = !running;
+  $("btnRun").textContent = running ? "⏸ Стоп" : "▶ Старт";
+  if (running) {
+    lastTime = 0;
+    runAccumulator = 0;
+    requestAnimationFrame(tick);
+  }
+}
+
+// ============================================================
+// Bootstrap
+// ============================================================
+buildStepper();
+buildRegisters();
+buildRAM();
+cacheRefs();
+
+const sel = $("program");
+for (const k of Object.keys(PROGRAMS)) {
+  const opt = document.createElement("option");
+  opt.value = k; opt.textContent = PROGRAMS[k].name;
+  sel.appendChild(opt);
+}
+sel.value = "add";
+sel.addEventListener("change", () => loadProgram(sel.value));
+
+$("btnReset").addEventListener("click", () => {
+  resetCPU();
+  if (running) toggleRun();
+  render();
+});
+$("btnStep").addEventListener("click", step1);
+$("btnStepI").addEventListener("click", stepInstruction);
+$("btnRun").addEventListener("click", toggleRun);
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === " ") { e.preventDefault(); step1(); }
+  else if (e.key === "Enter") { e.preventDefault(); stepInstruction(); }
+  else if (e.key.toLowerCase() === "r") { toggleRun(); }
+});
+
+loadProgram("add");
+</script>
+</body>
+</html>

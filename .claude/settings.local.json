@@ -5,7 +5,15 @@
       "PowerShell(python -c \"import PySide6, numpy, scipy, matplotlib; print\\('PySide6', PySide6.__version__\\); print\\('numpy', numpy.__version__\\); print\\('scipy', scipy.__version__\\); print\\('matplotlib', matplotlib.__version__\\)\")",
       "PowerShell(python -m pip install matplotlib)",
       "PowerShell(& \"C:/Users/admin/AppData/Local/Programs/Python/Python311/python.exe\" -m pip install PySide6 numpy matplotlib)",
-      "PowerShell(& \"C:/Users/admin/AppData/Local/Programs/Python/Python311/python.exe\" -c \"import sys; sys.path.insert\\(0, r'c:\\\\STM32\\\\simularion'\\); from coil_simulation import ellipk, ellipe, solenoid_field; import numpy as np; print\\('K\\(0.5\\)=', float\\(ellipk\\(0.5\\)\\)\\); Br, Bz, _ = solenoid_field\\(1.0, 0.05, 0.1, 50, np.array\\([0.0]\\), np.array\\([0.0]\\)\\); print\\('B\\(0,0\\)=', float\\(Bz[0]\\), 'T'\\); print\\('imports OK'\\)\")"
+      "PowerShell(& \"C:/Users/admin/AppData/Local/Programs/Python/Python311/python.exe\" -c \"import sys; sys.path.insert\\(0, r'c:\\\\STM32\\\\simularion'\\); from coil_simulation import ellipk, ellipe, solenoid_field; import numpy as np; print\\('K\\(0.5\\)=', float\\(ellipk\\(0.5\\)\\)\\); Br, Bz, _ = solenoid_field\\(1.0, 0.05, 0.1, 50, np.array\\([0.0]\\), np.array\\([0.0]\\)\\); print\\('B\\(0,0\\)=', float\\(Bz[0]\\), 'T'\\); print\\('imports OK'\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(python3 -c ' *)",
+      "PowerShell(Get-Command pdftoppm -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command pdftotext -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command python -ErrorAction SilentlyContinue)",
+      "PowerShell(& \"C:/Users/admin/AppData/Local/Programs/Python/Python311/python.exe\" -m pip install pypdf 2>&1)",
+      "Bash(gh auth *)",
+      "Bash(git config *)"
     ]
   }
 }
