@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Работа диода — 3D (p-n переход, прямое / обратное смещение)</title>
+<style>
+  :root {
+    --bg-0: #0d1117;
+    --bg-1: #161b22;
+    --bg-2: #21262d;
+    --line: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+    --plus: #ff6464;
+    --minus: #6ea8ff;
+    --hole: #ff8060;
+    --elec: #7fb8ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 10px;
+    height: 100vh;
+    padding: 10px;
+  }
+  .panel {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .group { margin-bottom: 16px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .row label {
+    flex: 0 0 90px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+  .row input[type="range"] { flex: 1; }
+  .row .val {
+    flex: 0 0 80px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 18px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    margin-top: -6px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { background: #79b8ff; }
+  input[type="range"]::-moz-range-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .checkrow {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px; color: var(--text-dim);
+  }
+  .checkrow input { accent-color: var(--accent); }
+  button {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  button:hover { background: #30363d; border-color: var(--text-dim); }
+  button:active { background: var(--accent-2); }
+  .help { color: var(--text-dim); line-height: 1.5; }
+  .help b { color: var(--text); }
+  .help .pos { color: var(--plus); font-weight: 600; }
+  .help .neg { color: var(--minus); font-weight: 600; }
+  .help .hole { color: var(--hole); font-weight: 600; }
+  .help .elec { color: var(--elec); font-weight: 600; }
+  #stage {
+    position: relative;
+    background: #05080d;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+  .hud {
+    position: absolute;
+    pointer-events: none;
+    color: var(--text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 4px #000;
+  }
+  .hud-top  { top: 12px; left: 14px; line-height: 1.5; }
+  .hud-bot  { bottom: 10px; left: 14px; color: var(--text-dim); }
+  .hud-tip  { top: 12px; right: 14px; color: var(--text-dim); text-align: right; }
+  .legend {
+    position: absolute;
+    bottom: 10px; right: 14px;
+    color: var(--text-dim); text-align: right; font-size: 11px;
+    line-height: 1.7;
+  }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .legend .swr { border-radius: 2px; }
+  .badge {
+    display: inline-block;
+    background: rgba(88, 166, 255, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    margin-left: 6px;
+  }
+  .state-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  .state-fwd  { background: rgba(80, 220, 120, 0.18); color: #6fe88e; border: 1px solid rgba(80,220,120,0.35); }
+  .state-rev  { background: rgba(255, 100, 100, 0.18); color: #ff8888; border: 1px solid rgba(255,100,100,0.35); }
+  .state-off  { background: rgba(180, 180, 180, 0.15); color: #aab; border: 1px solid rgba(180,180,180,0.30); }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="panel">
+    <div class="group">
+      <h2>Параметры <span class="badge">p-n переход</span></h2>
+      <div class="row">
+        <label>Напряж. U:</label>
+        <input id="ctlU" type="range" min="-200" max="200" value="100" step="1">
+        <span class="val" id="lblU">+1.00 В</span>
+      </div>
+      <div class="row">
+        <label>Темп. T:</label>
+        <input id="ctlT" type="range" min="0" max="100" value="35" step="1">
+        <span class="val" id="lblT">35 %</span>
+      </div>
+      <div class="row">
+        <label>Плотность:</label>
+        <input id="ctlN" type="range" min="20" max="200" value="90" step="1">
+        <span class="val" id="lblN">90</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <button id="btnRev">Реверс полярности ⇄</button>
+      <button id="btnZero">Сбросить U → 0</button>
+      <div class="checkrow">
+        <input id="chkAuto" type="checkbox">
+        <label for="chkAuto">авто-вращение</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkHoles" type="checkbox" checked>
+        <label for="chkHoles">показывать дырки (p)</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkElec" type="checkbox" checked>
+        <label for="chkElec">показывать электроны (n)</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkDepl" type="checkbox" checked>
+        <label for="chkDepl">область объёмного заряда</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkIons" type="checkbox" checked>
+        <label for="chkIons">ионы примесей</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkArrows" type="checkbox" checked>
+        <label for="chkArrows">стрелки тока в цепи</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Как это работает</h2>
+      <div class="help">
+        Диод — два полупроводника, соединённых вместе:<br>
+        • <b>p-область</b> легирована акцепторами → много <span class="hole">дырок</span> (положительные носители).<br>
+        • <b>n-область</b> легирована донорами → много <span class="elec">электронов</span> (отрицательные носители).<br><br>
+        На границе образуется <b>область объёмного заряда</b>
+        (depletion region) с встроенным полем ≈ 0,7 В.<br><br>
+        <b>Прямое смещение</b> (<span class="pos">+</span> на p, <span class="neg">−</span> на n, U &gt; 0,7 В):
+        барьер снижается — <span class="hole">дырки</span> и <span class="elec">электроны</span>
+        идут к переходу, рекомбинируют → течёт ток.<br><br>
+        <b>Обратное смещение</b> (<span class="pos">+</span> на n):
+        барьер растёт, носители уходят от перехода,
+        область объёмного заряда расширяется — ток ≈ 0.<br><br>
+        <b>ЛКМ</b> — поворот, <b>колесо</b> — зум, <b>ПКМ</b> — панорама.
+      </div>
+    </div>
+  </aside>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div class="hud hud-top" id="hudTop"></div>
+    <div class="hud hud-tip">ЛКМ — поворот · колесо — зум · ПКМ — панорама</div>
+    <div class="hud hud-bot" id="hudBot"></div>
+    <div class="legend">
+      <div><span class="sw swr" style="background:#d05050"></span>p-область (акцепторы)</div>
+      <div><span class="sw swr" style="background:#4070c8"></span>n-область (доноры)</div>
+      <div><span class="sw" style="background:#ff8060"></span>дырки (+ носители в p)</div>
+      <div><span class="sw" style="background:#7fb8ff"></span>электроны (− носители в n)</div>
+      <div><span class="sw swr" style="background:#8a9099;opacity:0.7"></span>обл. объёмного заряда</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+"use strict";
+
+// ---------- состояние ----------
+const state = {
+  U: 1.0,           // В, напряжение на диоде (внешний источник)
+  Tnorm: 0.35,      // нормированная "температура" (амплитуда теплового движения)
+  Nbase: 90,        // плотность частиц на каждый тип носителей
+  autoRotate: false,
+  showHoles: true,
+  showElec:  true,
+  showDepl:  true,
+  showIons:  true,
+  showArrows:true,
+  lastT: performance.now() / 1000,
+};
+
+// встроенная разность потенциалов p-n перехода (барьер)
+const V_BI = 0.7;
+
+// ---------- геометрия диода ----------
+// все размеры в "условных" метрах
+const D_LEN  = 0.020;   // длина кристалла
+const D_W    = 0.008;   // ширина (Y)
+const D_H    = 0.008;   // высота (Z)
+const D_HALF = D_LEN / 2;
+const LEAD_R = 0.0007;
+const LEAD_LEN = 0.022;
+const TERM_X   = D_HALF + LEAD_LEN;
+
+// ---------- three.js ----------
+const stage  = document.getElementById('stage');
+const canvas = document.getElementById('canvas');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setClearColor(0x05080d, 1);
+
+const scene = new THREE.Scene();
+
+// градиентный фон
+{
+  const bgGeom = new THREE.SphereGeometry(5, 32, 16);
+  const bgMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {},
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vPos;
+      void main() {
+        float h = normalize(vPos).y * 0.5 + 0.5;
+        vec3 top = vec3(0.075, 0.097, 0.137);
+        vec3 bot = vec3(0.030, 0.046, 0.070);
+        gl_FragColor = vec4(mix(bot, top, h), 1.0);
+      }`,
+  });
+  scene.add(new THREE.Mesh(bgGeom, bgMat));
+}
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+camera.position.set(0.022, 0.030, 0.075);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 0, 0);
+controls.minDistance = 0.025;
+controls.maxDistance = 0.30;
+
+// освещение
+scene.add(new THREE.AmbientLight(0x99aac8, 0.60));
+{
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.75);
+  d1.position.set(0.5, 0.8, 0.6);
+  scene.add(d1);
+  const d2 = new THREE.DirectionalLight(0x88aaff, 0.30);
+  d2.position.set(-0.7, -0.3, -0.5);
+  scene.add(d2);
+}
+
+// ---------- материалы кристалла ----------
+const pMat = new THREE.MeshStandardMaterial({
+  color: 0xd05050, metalness: 0.05, roughness: 0.85,
+  transparent: true, opacity: 0.18, depthWrite: false,
+});
+const nMat = new THREE.MeshStandardMaterial({
+  color: 0x4070c8, metalness: 0.05, roughness: 0.85,
+  transparent: true, opacity: 0.18, depthWrite: false,
+});
+const deplMat = new THREE.MeshStandardMaterial({
+  color: 0x8a9099, metalness: 0.0, roughness: 0.9,
+  transparent: true, opacity: 0.32, depthWrite: false,
+});
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x445566, transparent: true, opacity: 0.5 });
+
+const leadMat  = new THREE.MeshStandardMaterial({ color: 0xc9c9c9, metalness: 0.85, roughness: 0.30 });
+const wireMat  = new THREE.MeshStandardMaterial({ color: 0xc9a86a, metalness: 0.60, roughness: 0.40 });
+const battBody = new THREE.MeshStandardMaterial({ color: 0x2a2f38, metalness: 0.30, roughness: 0.70 });
+const battPos  = new THREE.MeshStandardMaterial({ color: 0xd13a3a, metalness: 0.30, roughness: 0.55, emissive: 0x200505 });
+const battNeg  = new THREE.MeshStandardMaterial({ color: 0x3a6fcc, metalness: 0.30, roughness: 0.55, emissive: 0x050d20 });
+
+// ---------- сборка диода ----------
+const diodeGroup = new THREE.Group();
+scene.add(diodeGroup);
+
+// корпус p (левая половина) и n (правая половина) — две половинки прямоугольника
+const halfGeom = new THREE.BoxGeometry(D_HALF, D_W, D_H);
+const pMesh = new THREE.Mesh(halfGeom, pMat);
+pMesh.position.x = -D_HALF / 2;
+const nMesh = new THREE.Mesh(halfGeom, nMat);
+nMesh.position.x =  D_HALF / 2;
+diodeGroup.add(pMesh, nMesh);
+
+// рёбра-обводка
+function addEdges(mesh) {
+  const eg = new THREE.EdgesGeometry(mesh.geometry);
+  const line = new THREE.LineSegments(eg, edgeMat);
+  line.position.copy(mesh.position);
+  diodeGroup.add(line);
+}
+addEdges(pMesh);
+addEdges(nMesh);
+
+// область объёмного заряда — узкий прозрачный блок, ширина меняется в анимации
+const deplGeom = new THREE.BoxGeometry(1, D_W * 1.005, D_H * 1.005);
+const deplMesh = new THREE.Mesh(deplGeom, deplMat);
+diodeGroup.add(deplMesh);
+
+// «графический» символ диода на n-стороне — кольцо-полоса (катод)
+{
+  const ringGeom = new THREE.BoxGeometry(0.0005, D_W * 1.02, D_H * 1.02);
+  const ringMat  = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.4 });
+  const ring = new THREE.Mesh(ringGeom, ringMat);
+  ring.position.x = D_HALF - 0.0012;
+  diodeGroup.add(ring);
+}
+
+// выводы (ножки)
+function makeLead(x1, x2) {
+  const len = Math.abs(x2 - x1);
+  const g = new THREE.CylinderGeometry(LEAD_R, LEAD_R, len, 16);
+  g.rotateZ(Math.PI / 2);
+  const m = new THREE.Mesh(g, leadMat);
+  m.position.x = (x1 + x2) / 2;
+  return m;
+}
+diodeGroup.add(makeLead(-D_HALF, -TERM_X));
+diodeGroup.add(makeLead( D_HALF,  TERM_X));
+
+// ---------- внешняя цепь: батарея + провода ----------
+const circuitGroup = new THREE.Group();
+scene.add(circuitGroup);
+
+const BUS_Y = -0.030;
+const BUS_HW = 0.026; // полуширина шины (X)
+
+function tubeBetween(a, b, r, mat) {
+  const path = new THREE.LineCurve3(a, b);
+  const g = new THREE.TubeGeometry(path, 1, r, 8, false);
+  return new THREE.Mesh(g, mat);
+}
+
+// вертикальные стойки от выводов диода к шине
+circuitGroup.add(tubeBetween(
+  new THREE.Vector3(-TERM_X, 0, 0),
+  new THREE.Vector3(-TERM_X, BUS_Y, 0),
+  LEAD_R, wireMat,
+));
+circuitGroup.add(tubeBetween(
+  new THREE.Vector3( TERM_X, 0, 0),
+  new THREE.Vector3( TERM_X, BUS_Y, 0),
+  LEAD_R, wireMat,
+));
+
+// горизонтальные шины к батарее
+const battLeftX  = -0.006;
+const battRightX =  0.006;
+circuitGroup.add(tubeBetween(
+  new THREE.Vector3(-TERM_X, BUS_Y, 0),
+  new THREE.Vector3( battLeftX, BUS_Y, 0),
+  LEAD_R, wireMat,
+));
+circuitGroup.add(tubeBetween(
+  new THREE.Vector3( TERM_X, BUS_Y, 0),
+  new THREE.Vector3( battRightX, BUS_Y, 0),
+  LEAD_R, wireMat,
+));
+
+// батарея — цилиндр
+{
+  const g = new THREE.CylinderGeometry(0.005, 0.005, 0.012, 24);
+  g.rotateZ(Math.PI / 2);
+  const m = new THREE.Mesh(g, battBody);
+  m.position.set(0, BUS_Y, 0);
+  circuitGroup.add(m);
+}
+// + и − торцы — отдельные диски, перекрашиваются при реверсе
+const posCapGeom = new THREE.CylinderGeometry(0.0052, 0.0052, 0.0008, 24);
+posCapGeom.rotateZ(Math.PI / 2);
+const negCapGeom = posCapGeom.clone();
+const posCap = new THREE.Mesh(posCapGeom, battPos);
+const negCap = new THREE.Mesh(negCapGeom, battNeg);
+circuitGroup.add(posCap, negCap);
+
+// ---------- частицы (electron / hole) ----------
+// Будем использовать InstancedMesh для эффективности.
+const MAX_PARTICLES = 300;
+
+const elecGeom = new THREE.SphereGeometry(0.00045, 10, 8);
+const elecMat  = new THREE.MeshStandardMaterial({
+  color: 0x7fb8ff, emissive: 0x1e3a66, roughness: 0.35, metalness: 0.1,
+});
+const elecMesh = new THREE.InstancedMesh(elecGeom, elecMat, MAX_PARTICLES);
+elecMesh.frustumCulled = false;
+scene.add(elecMesh);
+
+const holeGeom = new THREE.SphereGeometry(0.00045, 10, 8);
+const holeMat  = new THREE.MeshStandardMaterial({
+  color: 0xff8060, emissive: 0x661a10, roughness: 0.35, metalness: 0.1,
+});
+const holeMesh = new THREE.InstancedMesh(holeGeom, holeMat, MAX_PARTICLES);
+holeMesh.frustumCulled = false;
+scene.add(holeMesh);
+
+// неподвижные ионы примесей — маленькие точки в каждой области
+// (положительные ионы в n, отрицательные — в p)
+const IONS_PER_SIDE = 70;
+const ionPosGeom = new THREE.SphereGeometry(0.00018, 8, 6);
+const ionPosMat  = new THREE.MeshBasicMaterial({ color: 0xffc0a0, transparent: true, opacity: 0.85 });
+const ionNegMat  = new THREE.MeshBasicMaterial({ color: 0xa0c8ff, transparent: true, opacity: 0.85 });
+const ionGroup   = new THREE.Group();
+scene.add(ionGroup);
+
+// массивы частиц
+const electrons = []; // живут в n-области (x > 0)
+const holes     = []; // живут в p-области (x < 0)
+const ions      = []; // фиксированы
+
+function randIn(a, b) { return a + (b - a) * Math.random(); }
+function randInBody(side /* -1 = p, +1 = n */) {
+  // случайные точки внутри половины (с небольшим отступом от стенок)
+  const margin = 0.0008;
+  let x;
+  if (side < 0) x = randIn(-D_HALF + margin, -margin);
+  else          x = randIn( margin,         D_HALF - margin);
+  const y = randIn(-D_W/2 + margin, D_W/2 - margin);
+  const z = randIn(-D_H/2 + margin, D_H/2 - margin);
+  return { x, y, z };
+}
+
+function spawnParticles() {
+  electrons.length = 0;
+  holes.length     = 0;
+  const N = state.Nbase;
+  for (let i = 0; i < N && i < MAX_PARTICLES; i++) {
+    const p = randInBody(+1);
+    electrons.push({ ...p, vx: 0, vy: 0, vz: 0, alive: true });
+  }
+  for (let i = 0; i < N && i < MAX_PARTICLES; i++) {
+    const p = randInBody(-1);
+    holes.push({ ...p, vx: 0, vy: 0, vz: 0, alive: true });
+  }
+  elecMesh.count = electrons.length;
+  holeMesh.count = holes.length;
+}
+
+function spawnIons() {
+  ionGroup.clear();
+  ions.length = 0;
+  if (!state.showIons) return;
+  // в p-области: отрицательные ионы (акцепторы) — синеватые точки
+  for (let i = 0; i < IONS_PER_SIDE; i++) {
+    const p = randInBody(-1);
+    const m = new THREE.Mesh(ionPosGeom, ionNegMat);
+    m.position.set(p.x, p.y, p.z);
+    ionGroup.add(m);
+    ions.push(m);
+  }
+  // в n-области: положительные ионы (доноры) — красноватые точки
+  for (let i = 0; i < IONS_PER_SIDE; i++) {
+    const p = randInBody(+1);
+    const m = new THREE.Mesh(ionPosGeom, ionPosMat);
+    m.position.set(p.x, p.y, p.z);
+    ionGroup.add(m);
+    ions.push(m);
+  }
+}
+
+// ---------- стрелки тока в проводах ----------
+// бегущие маленькие красные шарики вдоль внешней цепи (направление тока)
+const FLOW_COUNT = 8;
+const flowGeom = new THREE.SphereGeometry(0.0008, 10, 8);
+const flowMat  = new THREE.MeshStandardMaterial({
+  color: 0xffd060, emissive: 0x553300, roughness: 0.4,
+});
+const flowMesh = new THREE.InstancedMesh(flowGeom, flowMat, FLOW_COUNT);
+flowMesh.frustumCulled = false;
+scene.add(flowMesh);
+
+// путь по внешней цепи (ток I вне диода идёт от + батареи к выводу p, через диод, обратно к − батареи)
+// строим как массив сегментов в координатах сцены, общая длина — для интерполяции
+function buildCircuitPath() {
+  // при прямом смещении (полярность по умолчанию: + на p (левый), − на n (правый))
+  // ток внешней цепи: из (+) клеммы батареи → провод → левый вывод p-диода → через диод (внутри другая физика) → правый вывод n → провод → (−) клемма
+  // Мы рисуем поток в проводах (без участка внутри диода)
+  const pts = [
+    new THREE.Vector3(battLeftX, BUS_Y, 0),    // + клемма батареи (по умолчанию слева)
+    new THREE.Vector3(-TERM_X,   BUS_Y, 0),    // угол
+    new THREE.Vector3(-TERM_X,   0,     0),    // вывод p-диода
+    // (внутри диода — не рисуем поток шариками, там частицы носители)
+    new THREE.Vector3( TERM_X,   0,     0),    // вывод n-диода
+    new THREE.Vector3( TERM_X,   BUS_Y, 0),    // угол
+    new THREE.Vector3( battRightX, BUS_Y, 0),  // − клемма
+  ];
+  const segs = [];
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const L = a.distanceTo(b);
+    segs.push({ a, b, L, accum: total });
+    total += L;
+  }
+  return { segs, total };
+}
+let circuitPath = buildCircuitPath();
+
+const _tmpMat4 = new THREE.Matrix4();
+const _tmpV3   = new THREE.Vector3();
+
+function placeOnPath(idx, s /* 0..1 */, polarity) {
+  // s — нормированная позиция вдоль пути; полярность меняет направление потока
+  const u = polarity > 0 ? s : (1 - s);
+  const target = u * circuitPath.total;
+  for (let i = 0; i < circuitPath.segs.length; i++) {
+    const sg = circuitPath.segs[i];
+    if (target >= sg.accum && target <= sg.accum + sg.L) {
+      const t = (target - sg.accum) / sg.L;
+      _tmpV3.copy(sg.a).lerp(sg.b, t);
+      _tmpMat4.makeTranslation(_tmpV3.x, _tmpV3.y, _tmpV3.z);
+      flowMesh.setMatrixAt(idx, _tmpMat4);
+      return;
+    }
+  }
+}
+
+// ---------- физика анимации ----------
+// Полярность: polarity = +1 → "плюс" батареи слева (на p), это прямое смещение.
+//             polarity = -1 → "плюс" справа (на n), обратное смещение.
+let polarity = +1;
+function effectiveBias() {
+  // эффективное напряжение на переходе с учётом полярности и встроенного барьера
+  return polarity * state.U; // если polarity=+1 и U>0 — прямое смещение
+}
+
+// текущая ширина области объёмного заряда (depletion)
+let deplW   = 0.0025;
+let deplSm  = deplW;
+
+// сглаженный «ток» (для индикации и скорости бегунков)
+let currentSm = 0;
+
+function diodeCurrent() {
+  // Шокли (упрощённо), нормированная: I = I0 * (exp(Vd / Vt) - 1)
+  // Только для индикации/скорости анимации.
+  const Vt = 0.0259; // T = 300K
+  const Vd = effectiveBias();
+  // ограничим, чтобы не "взорвалось"
+  const x = Math.max(-40, Math.min(20, Vd / Vt));
+  const I = (Math.exp(x) - 1); // условные единицы, насыщенный ток ~1
+  // нормируем мягко
+  return Math.tanh(I / 50);
+}
+
+function depletionWidth() {
+  // W ~ sqrt(V_bi - V_eff). Условные единицы.
+  const Veff = effectiveBias(); // прямое: положительное → меньше барьер
+  const arg  = Math.max(0.05, V_BI - Veff);
+  const w0   = 0.0028; // ширина в равновесии
+  const w    = w0 * Math.sqrt(arg / V_BI);
+  return Math.max(0.0008, Math.min(D_HALF * 1.6, w));
+}
+
+// ---------- инстансинг — обновление трансформаций ----------
+function updateInstances() {
+  for (let i = 0; i < electrons.length; i++) {
+    const p = electrons[i];
+    _tmpMat4.makeTranslation(p.x, p.y, p.z);
+    elecMesh.setMatrixAt(i, _tmpMat4);
+  }
+  elecMesh.instanceMatrix.needsUpdate = true;
+
+  for (let i = 0; i < holes.length; i++) {
+    const p = holes[i];
+    _tmpMat4.makeTranslation(p.x, p.y, p.z);
+    holeMesh.setMatrixAt(i, _tmpMat4);
+  }
+  holeMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ---------- обновление визуала переключателей ----------
+function applyToggles() {
+  elecMesh.visible = state.showElec;
+  holeMesh.visible = state.showHoles;
+  deplMesh.visible = state.showDepl;
+  ionGroup.visible = state.showIons;
+  flowMesh.visible = state.showArrows;
+}
+
+// ---------- UI ----------
+const $ = (id) => document.getElementById(id);
+
+const ctlU = $('ctlU'), lblU = $('lblU');
+const ctlT = $('ctlT'), lblT = $('lblT');
+const ctlN = $('ctlN'), lblN = $('lblN');
+
+function readU() {
+  // -2.00 .. +2.00 В с шагом 0.01
+  state.U = parseInt(ctlU.value, 10) / 100;
+  lblU.textContent = (state.U >= 0 ? '+' : '') + state.U.toFixed(2) + ' В';
+}
+function readT() {
+  state.Tnorm = parseInt(ctlT.value, 10) / 100;
+  lblT.textContent = ctlT.value + ' %';
+}
+function readN() {
+  state.Nbase = parseInt(ctlN.value, 10);
+  lblN.textContent = String(state.Nbase);
+  spawnParticles();
+}
+ctlU.addEventListener('input', readU);
+ctlT.addEventListener('input', readT);
+ctlN.addEventListener('input', readN);
+readU(); readT(); readN();
+
+$('btnRev').addEventListener('click', () => {
+  polarity = -polarity;
+});
+$('btnZero').addEventListener('click', () => {
+  state.U = 0;
+  ctlU.value = 0;
+  lblU.textContent = '0.00 В';
+});
+
+$('chkAuto').addEventListener('change', e => state.autoRotate = e.target.checked);
+$('chkHoles').addEventListener('change', e => { state.showHoles = e.target.checked; applyToggles(); });
+$('chkElec' ).addEventListener('change', e => { state.showElec  = e.target.checked; applyToggles(); });
+$('chkDepl' ).addEventListener('change', e => { state.showDepl  = e.target.checked; applyToggles(); });
+$('chkIons' ).addEventListener('change', e => {
+  state.showIons  = e.target.checked;
+  spawnIons();
+  applyToggles();
+});
+$('chkArrows').addEventListener('change', e => { state.showArrows = e.target.checked; applyToggles(); });
+
+// первичная инициализация частиц
+spawnParticles();
+spawnIons();
+applyToggles();
+
+// ---------- ресайз ----------
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+// ---------- HUD ----------
+const hudTop = $('hudTop'), hudBot = $('hudBot');
+function updateHUD() {
+  const Vd = effectiveBias();
+  const I  = diodeCurrent();
+  let stateTag;
+  if (Vd > V_BI - 0.05)      stateTag = '<span class="state-tag state-fwd">прямое смещение</span>';
+  else if (Vd < -0.02)       stateTag = '<span class="state-tag state-rev">обратное смещение</span>';
+  else                       stateTag = '<span class="state-tag state-off">подпороговая зона</span>';
+
+  // подсказка о полярности
+  const polTxt = polarity > 0
+    ? '<span style="color:#ff8080">+</span> на p (слева) · <span style="color:#80a8ff">−</span> на n (справа)'
+    : '<span style="color:#ff8080">+</span> на n (справа) · <span style="color:#80a8ff">−</span> на p (слева)';
+
+  hudTop.innerHTML =
+    `U = ${(state.U>=0?'+':'')}${state.U.toFixed(2)} В · V<sub>д</sub> = ${(Vd>=0?'+':'')}${Vd.toFixed(2)} В ${stateTag}<br>` +
+    `барьер V<sub>bi</sub> ≈ ${V_BI.toFixed(2)} В · I ≈ ${I.toFixed(3)} (отн.)<br>` +
+    `${polTxt}`;
+  hudBot.textContent = `T = ${(state.Tnorm*100).toFixed(0)}%  ·  носителей: e⁻ ${electrons.length} / h⁺ ${holes.length}`;
+}
+
+// ---------- главный цикл ----------
+let flowPhase = 0;
+
+function step() {
+  const tnow = performance.now() / 1000;
+  let dt = tnow - state.lastT;
+  if (dt > 0.05) dt = 0.05;
+  state.lastT = tnow;
+
+  controls.autoRotate = state.autoRotate;
+  controls.autoRotateSpeed = 0.7;
+  controls.update();
+
+  // целевая ширина обл. объёмного заряда
+  const wTarget = depletionWidth();
+  deplW += (wTarget - deplW) * Math.min(1, dt * 4);
+  // граница перехода чуть смещается при смещении (для наглядности)
+  const Vd = effectiveBias();
+  const junctionShift = -0.15 * deplW * Math.tanh(Vd); // прямое — депл. чуть сдвигается, не критично
+  deplMesh.position.x = junctionShift;
+  deplMesh.scale.x    = deplW;
+
+  // ток (нормированный)
+  const Itarget = diodeCurrent(); // отн. ед.
+  currentSm += (Itarget - currentSm) * Math.min(1, dt * 5);
+
+  // движение частиц
+  const T = state.Tnorm;                          // тепловое движение
+  const driftScale = 0.030;                       // мс/сек ход дрейфа
+  // дрейф зависит от Vd:
+  //  - при прямом смещении (Vd > V_BI) электроны идут к границе (←), дырки → к границе (→)
+  //  - при V_BI > Vd > 0 (подпороговая зона) дрейф очень мал
+  //  - при обратном смещении носители уходят от границы (электроны → +x, дырки → −x)
+  let driftElec = 0; // знак скорости электронов по X
+  let driftHole = 0; // знак скорости дырок по X
+  let recombineAtJunction = false;
+
+  if (Vd > V_BI) {
+    // прямое смещение
+    const k = Math.min(1, (Vd - V_BI) * 2.2);
+    driftElec = -k;            // электроны → к границе (x уменьшается)
+    driftHole = +k;            // дырки → к границе (x увеличивается)
+    recombineAtJunction = true;
+  } else if (Vd < -0.02) {
+    // обратное смещение
+    const k = Math.min(1, (-Vd) * 0.8);
+    driftElec = +k;            // электроны → к катоду n (вправо)
+    driftHole = -k;            // дырки → к аноду p (влево)
+  } else {
+    // подпороговая — лёгкий дрейф к границе пропорционален Vd
+    const k = Vd / V_BI;
+    driftElec = -k * 0.15;
+    driftHole = +k * 0.15;
+  }
+
+  const vDrift = driftScale; // 1 рад в сек
+  const jitter = 0.0035 * (0.4 + T);
+
+  // --- электроны (живут в n: x ∈ [0+w/2 ; +D_HALF])
+  const halfW = deplW * 0.5 + junctionShift;
+  for (let i = 0; i < electrons.length; i++) {
+    const p = electrons[i];
+    // обновление положения: тепловое + дрейф
+    p.x += driftElec * vDrift * dt + (Math.random() - 0.5) * jitter * dt * 60;
+    p.y += (Math.random() - 0.5) * jitter * dt * 60;
+    p.z += (Math.random() - 0.5) * jitter * dt * 60;
+
+    // отражение от стенок (n-область)
+    const margin = 0.0006;
+    const minX = halfW;                 // не заходим в depletion-зону при reverse-bias
+    const maxX = D_HALF - margin;
+
+    // при прямом смещении электрон может "перейти" в depletion и рекомбинировать → респаун у катода (x≈D_HALF)
+    if (recombineAtJunction && p.x < halfW) {
+      // рекомбинация: респаун у катода (вправо) на случайной Y/Z
+      const r = randInBody(+1);
+      p.x = D_HALF - margin - Math.random() * 0.0015;
+      p.y = r.y; p.z = r.z;
+      continue;
+    }
+    if (p.x < minX) p.x = minX + (minX - p.x) * 0.3;
+    if (p.x > maxX) p.x = maxX - (p.x - maxX) * 0.3;
+    if (p.y < -D_W/2 + margin) p.y = -D_W/2 + margin;
+    if (p.y >  D_W/2 - margin) p.y =  D_W/2 - margin;
+    if (p.z < -D_H/2 + margin) p.z = -D_H/2 + margin;
+    if (p.z >  D_H/2 - margin) p.z =  D_H/2 - margin;
+  }
+
+  // --- дырки (p: x ∈ [-D_HALF ; -w/2])
+  const halfWL = -deplW * 0.5 + junctionShift;
+  for (let i = 0; i < holes.length; i++) {
+    const p = holes[i];
+    p.x += driftHole * vDrift * dt + (Math.random() - 0.5) * jitter * dt * 60;
+    p.y += (Math.random() - 0.5) * jitter * dt * 60;
+    p.z += (Math.random() - 0.5) * jitter * dt * 60;
+
+    const margin = 0.0006;
+    const maxX = halfWL;
+    const minX = -D_HALF + margin;
+
+    if (recombineAtJunction && p.x > halfWL) {
+      // рекомбинация: респаун у анода (влево)
+      const r = randInBody(-1);
+      p.x = -D_HALF + margin + Math.random() * 0.0015;
+      p.y = r.y; p.z = r.z;
+      continue;
+    }
+    if (p.x > maxX) p.x = maxX - (p.x - maxX) * 0.3;
+    if (p.x < minX) p.x = minX + (minX - p.x) * 0.3;
+    if (p.y < -D_W/2 + margin) p.y = -D_W/2 + margin;
+    if (p.y >  D_W/2 - margin) p.y =  D_W/2 - margin;
+    if (p.z < -D_H/2 + margin) p.z = -D_H/2 + margin;
+    if (p.z >  D_H/2 - margin) p.z =  D_H/2 - margin;
+  }
+
+  updateInstances();
+
+  // прозрачность depletion-зоны: глубже при reverse, светлее при forward
+  deplMat.opacity = 0.18 + 0.30 * Math.max(0, 1 - Math.max(0, Vd) / V_BI);
+
+  // батарея — какой торец красный, какой синий (зависит от полярности)
+  // полярность +1: + слева, − справа
+  if (polarity > 0) {
+    posCap.position.set(battLeftX  - 0.0064, BUS_Y, 0);
+    negCap.position.set(battRightX + 0.0064, BUS_Y, 0);
+  } else {
+    posCap.position.set(battRightX + 0.0064, BUS_Y, 0);
+    negCap.position.set(battLeftX  - 0.0064, BUS_Y, 0);
+  }
+
+  // бегущие "шарики тока" по внешней цепи
+  // скорость пропорциональна currentSm
+  flowPhase += currentSm * dt * 0.6;
+  flowPhase = ((flowPhase % 1) + 1) % 1;
+  for (let i = 0; i < FLOW_COUNT; i++) {
+    let s = (flowPhase + i / FLOW_COUNT) % 1;
+    placeOnPath(i, s, polarity);
+  }
+  flowMesh.instanceMatrix.needsUpdate = true;
+  // гасим шарики если ток слишком мал
+  const flowAlpha = Math.min(1, Math.abs(currentSm) * 8);
+  flowMat.opacity = flowAlpha;
+  flowMat.transparent = flowAlpha < 1;
+  flowMesh.visible = state.showArrows && flowAlpha > 0.02;
+
+  updateHUD();
+  renderer.render(scene, camera);
+  requestAnimationFrame(step);
+}
+
+requestAnimationFrame(step);
+</script>
+</body>
+</html>
