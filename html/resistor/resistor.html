@@ -452,6 +452,7 @@ scene.add(bodyGroup, leadsGroup, wiresGroup, innerGroup);
 // ---------- материалы ----------
 const bodyMat = new THREE.MeshStandardMaterial({
   color: 0xd4b48a, metalness: 0.05, roughness: 0.7, emissive: 0x000000,
+  transparent: true, opacity: 0.42, depthWrite: false,
 });
 const leadMat = new THREE.MeshStandardMaterial({
   color: 0xc9a86a, metalness: 0.75, roughness: 0.35,
@@ -547,53 +548,89 @@ function buildResistor() {
 }
 
 // ---------- внутренний слой (атомы решётки) ----------
-let latticePoints = null; // THREE.Points
-let latticeMat = null;
+// Атомы реализованы как InstancedMesh шариков — каждый колеблется
+// около своей "узловой" позиции, амплитуда ∝ температуре.
+const ATOM_COUNT = 160;
+const atomHome  = []; // Vector3 — узлы решётки
+const atomFreq  = []; // частота колебаний (рад/с)
+const atomPhX   = []; // случайные фазы по трём осям
+const atomPhY   = [];
+const atomPhZ   = [];
+const atomHot   = []; // временный "перегрев" атома после столкновения с электроном
+let   atomMesh  = null;
+let   atomMat   = null;
+const _atomMtx  = new THREE.Matrix4();
+const _atomQuat = new THREE.Quaternion();
+const _atomScale= new THREE.Vector3(1, 1, 1);
+const _atomVec  = new THREE.Vector3();
 
 function buildInner() {
   innerGroup.clear();
+  atomHome.length = 0;
+  atomFreq.length = 0;
+  atomPhX.length  = 0;
+  atomPhY.length  = 0;
+  atomPhZ.length  = 0;
+  atomHot.length  = 0;
 
   // лёгкий «стержень» внутри (резистивный слой) — слабо просвечивающий
   const coreGeom = new THREE.CylinderGeometry(
-    BODY_R * 0.55, BODY_R * 0.55, BODY_LEN * 0.93, 16, 1, false,
+    BODY_R * 0.60, BODY_R * 0.60, BODY_LEN * 0.93, 20, 1, false,
   );
   coreGeom.rotateZ(Math.PI / 2);
   const coreMat = new THREE.MeshStandardMaterial({
-    color: 0x402418,
-    metalness: 0.1, roughness: 0.8,
+    color: 0x3a1f12,
+    metalness: 0.1, roughness: 0.85,
     emissive: 0x000000,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.30,
     depthWrite: false,
   });
   const core = new THREE.Mesh(coreGeom, coreMat);
+  core.renderOrder = -1;
   innerGroup.add(core);
-  core.userData.isCore = true;
 
-  // атомы решётки — мелкие точки внутри стержня
-  const N = 220;
-  const positions = new Float32Array(N * 3);
-  for (let i = 0; i < N; i++) {
-    // равномерно по цилиндру
-    const x = (Math.random() - 0.5) * BODY_LEN * 0.92;
-    const r = Math.sqrt(Math.random()) * BODY_R * 0.50;
-    const a = Math.random() * Math.PI * 2;
-    positions[i * 3]     = x;
-    positions[i * 3 + 1] = r * Math.cos(a);
-    positions[i * 3 + 2] = r * Math.sin(a);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  latticeMat = new THREE.PointsMaterial({
-    color: 0xffb070,
-    size: 0.0008,
-    sizeAttenuation: true,
-    transparent: true,
-    opacity: 0.55,
-    depthWrite: false,
+  // Атомы решётки — почти регулярная сетка с лёгким "беспорядком".
+  // Распределяем по объёму цилиндра радиуса BODY_R*0.55, длины BODY_LEN*0.92.
+  const atomR = BODY_R * 0.10;        // радиус сферы атома
+  const sphereGeom = new THREE.SphereGeometry(atomR, 10, 8);
+  atomMat = new THREE.MeshStandardMaterial({
+    color: 0xb27a4c, metalness: 0.25, roughness: 0.55,
+    emissive: 0x301008,
   });
-  latticePoints = new THREE.Points(g, latticeMat);
-  innerGroup.add(latticePoints);
+  atomMesh = new THREE.InstancedMesh(sphereGeom, atomMat, ATOM_COUNT);
+  atomMesh.frustumCulled = false;
+
+  // Размещаем по примерно регулярной сетке (jitter), по объёму цилиндра.
+  // Сетка: nx столбцов по X, и по кольцам в плоскости YZ.
+  const nx = 10;
+  const perSlab = Math.ceil(ATOM_COUNT / nx);
+  let idx = 0;
+  for (let i = 0; i < nx && idx < ATOM_COUNT; i++) {
+    const fx = (i + 0.5) / nx;
+    const x = -BODY_LEN * 0.46 + fx * BODY_LEN * 0.92;
+    for (let j = 0; j < perSlab && idx < ATOM_COUNT; j++) {
+      // равномерно по диску — sqrt(rand) для плотности
+      const r = Math.sqrt(Math.random()) * BODY_R * 0.50;
+      const a = Math.random() * Math.PI * 2;
+      const y = r * Math.cos(a);
+      const z = r * Math.sin(a);
+      // лёгкий jitter по x, чтобы решётка не была идеально плоской
+      const xj = x + (Math.random() - 0.5) * BODY_LEN * 0.04;
+      atomHome.push(new THREE.Vector3(xj, y, z));
+      atomFreq.push(28 + Math.random() * 30);      // 4–9 Гц * 2π ≈ 28–60 рад/с
+      atomPhX.push(Math.random() * Math.PI * 2);
+      atomPhY.push(Math.random() * Math.PI * 2);
+      atomPhZ.push(Math.random() * Math.PI * 2);
+      atomHot.push(0);
+      // начальная матрица
+      _atomMtx.compose(atomHome[idx], _atomQuat, _atomScale);
+      atomMesh.setMatrixAt(idx, _atomMtx);
+      idx++;
+    }
+  }
+  atomMesh.instanceMatrix.needsUpdate = true;
+  innerGroup.add(atomMesh);
 }
 
 // ---------- провода / батарея / схема ----------
@@ -811,6 +848,7 @@ const eMat = new THREE.ShaderMaterial({
 });
 const ePoints = new THREE.Points(eGeom, eMat);
 ePoints.frustumCulled = false;
+ePoints.renderOrder = 4; // поверх полупрозрачного корпуса
 scene.add(ePoints);
 
 // массив электронов: каждый имеет t∈[0,1], скоростной коэффициент,
@@ -843,6 +881,43 @@ hPoints.frustumCulled = false;
 scene.add(hPoints);
 const heatParts = []; // {x, y, z, vy, age, maxLife}
 
+// ---------- искры столкновений ----------
+const MAX_F = 600;
+const fGeom = new THREE.BufferGeometry();
+const fPositions = new Float32Array(MAX_F * 3);
+const fColors    = new Float32Array(MAX_F * 3);
+const fSizes     = new Float32Array(MAX_F);
+fGeom.setAttribute('position', new THREE.BufferAttribute(fPositions, 3));
+fGeom.setAttribute('color',    new THREE.BufferAttribute(fColors, 3));
+fGeom.setAttribute('size',     new THREE.BufferAttribute(fSizes, 1));
+const fMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uMap: { value: makeParticleTexture() },
+    uPxPerUnit: { value: 1.0 },
+  },
+  vertexShader: eMat.vertexShader,
+  fragmentShader: eMat.fragmentShader,
+  vertexColors: true,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const fPoints = new THREE.Points(fGeom, fMat);
+fPoints.frustumCulled = false;
+fPoints.renderOrder = 5; // поверх корпуса
+scene.add(fPoints);
+const flashes = []; // {x, y, z, age, maxLife, size, intensity}
+
+function spawnFlash(x, y, z, intensity) {
+  flashes.push({
+    x, y, z,
+    age: 0,
+    maxLife: 0.18 + Math.random() * 0.12,
+    size: 0.0030 + Math.random() * 0.0015,
+    intensity: intensity,
+  });
+}
+
 // ---------- assembly ----------
 function rebuildAll() {
   buildResistor();
@@ -863,6 +938,7 @@ function resize() {
   const px = h * 0.5 / Math.tan(camera.fov * 0.5 * Math.PI / 180);
   eMat.uniforms.uPxPerUnit.value = px;
   hMat.uniforms.uPxPerUnit.value = px;
+  fMat.uniforms.uPxPerUnit.value = px;
 }
 new ResizeObserver(resize).observe(stage);
 resize();
@@ -907,28 +983,73 @@ function tick(now) {
   const baseSpeed = 1.0;
   const v = baseSpeed * Inorm;
 
+  // средняя длина свободного пробега зависит от температуры —
+  // нагретая решётка рассеивает чаще (резистивность растёт)
+  const hopBase = 0.060 - 0.020 * tempK; // 60..40 мс между столкновениями
   for (let i = electrons.length - 1; i >= 0; i--) {
     const p = electrons[i];
-    // внутри резистивного участка движение замедлено и с дрожанием
+    const wasIn = !!p._inR;
+    // внутри резистивного участка движение замедлено
     const inResistor =
       (p.t >= resistorSegStart && p.t <= resistorSegEnd);
-    const slow = inResistor ? 0.35 : 1.0;
+    p._inR = inResistor;
+    const slow = inResistor ? 0.32 : 1.0;
     p.t += v * dt * sign * slow;
     // зацикливание
     p.t = ((p.t % 1) + 1) % 1;
     p.age += dt;
 
-    // случайные "столкновения" внутри резистора — обновляем jitter
-    if (inResistor) {
+    if (inResistor && !wasIn) {
+      // только что вошёл в резистивный слой — задаём первую "цель" рассеяния
+      p.startY = 0; p.startZ = 0;
+      p.targetY = (Math.random() - 0.5) * BODY_R * 0.85;
+      p.targetZ = (Math.random() - 0.5) * BODY_R * 0.85;
+      p.hopDur  = hopBase + Math.random() * 0.030;
+      p.hop     = p.hopDur;
+      p.dispY = 0; p.dispZ = 0;
+    } else if (inResistor) {
       p.hop -= dt;
       if (p.hop <= 0) {
-        p.jitterY = (Math.random() - 0.5) * BODY_R * 0.6;
-        p.jitterZ = (Math.random() - 0.5) * BODY_R * 0.6;
-        p.hop = 0.04 + Math.random() * 0.07; // следующая «коллизия»
+        // СТОЛКНОВЕНИЕ: текущая позиция — это targetY/Z (электрон до неё долетел)
+        const collX = samplePath(p.t).x;
+        if (state.showInner) {
+          // вспышка в точке столкновения
+          spawnFlash(collX, p.targetY, p.targetZ,
+            0.5 + 0.7 * Inorm + 0.8 * tempK);
+          // ближайший атом получает кратковременный "перегрев"
+          let bestIdx = -1, bestD2 = 1e9;
+          for (let k = 0; k < atomHome.length; k++) {
+            const h = atomHome[k];
+            const dx = h.x - collX;
+            const dy = h.y - p.targetY;
+            const dz = h.z - p.targetZ;
+            const d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 < bestD2) { bestD2 = d2; bestIdx = k; }
+          }
+          if (bestIdx >= 0) {
+            atomHot[bestIdx] = Math.min(1.0,
+              atomHot[bestIdx] + 0.30 + 0.35 * Inorm);
+          }
+        }
+        // новое направление рассеяния — следующая "цель"
+        p.startY = p.targetY;
+        p.startZ = p.targetZ;
+        p.targetY = (Math.random() - 0.5) * BODY_R * 0.85;
+        p.targetZ = (Math.random() - 0.5) * BODY_R * 0.85;
+        p.hopDur  = hopBase + Math.random() * 0.030;
+        p.hop     = p.hopDur;
       }
+      // линейная интерполяция между точками рассеяния — даёт зигзаг
+      const u = 1 - p.hop / p.hopDur;
+      p.dispY = p.startY + (p.targetY - p.startY) * u;
+      p.dispZ = p.startZ + (p.targetZ - p.startZ) * u;
+    } else if (wasIn) {
+      // только что вышел — затухание поперечного смещения
+      p.dispY = (p.dispY || 0) * 0.6;
+      p.dispZ = (p.dispZ || 0) * 0.6;
     } else {
-      p.jitterY *= 0.85;
-      p.jitterZ *= 0.85;
+      p.dispY = (p.dispY || 0) * 0.6;
+      p.dispZ = (p.dispZ || 0) * 0.6;
     }
 
     if (p.age > p.maxLife) {
@@ -947,9 +1068,11 @@ function tick(now) {
         t: Math.random(),
         age: 0,
         maxLife: 1.0 + Math.random() * 1.8,
-        jitterY: 0,
-        jitterZ: 0,
-        hop: 0.04 + Math.random() * 0.07,
+        dispY: 0, dispZ: 0,
+        startY: 0, startZ: 0,
+        targetY: 0, targetZ: 0,
+        hop: 0.04, hopDur: 0.06,
+        _inR: false,
       });
     }
   }
@@ -960,8 +1083,8 @@ function tick(now) {
   for (let i = 0; i < ne; i++) {
     const p = electrons[i];
     const pos = samplePath(p.t);
-    pos.y += p.jitterY;
-    pos.z += p.jitterZ;
+    pos.y += (p.dispY || 0);
+    pos.z += (p.dispZ || 0);
     const lifeFrac = Math.max(0, 1 - p.age / p.maxLife);
     const fadeIn = Math.min(1, p.age / 0.15);
     const a01 = lifeFrac * fadeIn;
@@ -1018,16 +1141,73 @@ function tick(now) {
   heatLight.intensity = kVis * 0.018;
   heatLight.color.copy(hc);
 
-  // решётка внутри: при нагреве «трясётся» сильнее (визуально — увеличиваем размер/яркость)
-  if (latticeMat) {
-    latticeMat.opacity = state.showInner ? (0.45 + 0.45 * kVis) : 0.0;
-    latticeMat.size    = 0.0007 + 0.0010 * kVis;
-    latticeMat.color.setRGB(
-      1.0, 0.70 + 0.20 * kVis, 0.40 + 0.30 * kVis,
+  // решётка: каждый атом колеблется около узла, амплитуда ∝ температуре.
+  // Атом, недавно "сбитый" электроном, на короткое время колеблется сильнее
+  // и светится ярче — наглядно показывает передачу энергии решётке.
+  if (atomMesh && atomMat) {
+    const baseAmp = BODY_R * 0.025 * (0.20 + kVis * 1.10);
+    const tSec = tNow;
+    for (let k = 0; k < atomHome.length; k++) {
+      atomHot[k] = Math.max(0, atomHot[k] - dt * 2.2);
+      const home = atomHome[k];
+      const f    = atomFreq[k];
+      const amp  = baseAmp * (1 + 2.2 * atomHot[k]);
+      const dx = Math.sin(tSec * f + atomPhX[k]) * amp;
+      const dy = Math.sin(tSec * f * 1.13 + atomPhY[k]) * amp;
+      const dz = Math.sin(tSec * f * 0.91 + atomPhZ[k]) * amp;
+      _atomVec.set(home.x + dx, home.y + dy, home.z + dz);
+      const sc = 1.0 + 0.6 * atomHot[k];
+      _atomScale.set(sc, sc, sc);
+      _atomMtx.compose(_atomVec, _atomQuat, _atomScale);
+      atomMesh.setMatrixAt(k, _atomMtx);
+    }
+    atomMesh.instanceMatrix.needsUpdate = true;
+    // общий цвет/свечение атомов — теплеет при нагреве
+    atomMat.emissive.setRGB(
+      0.35 + 0.55 * kVis,
+      0.10 + 0.45 * kVis,
+      0.04 + 0.10 * kVis,
+    );
+    atomMat.color.setRGB(
+      0.70 + 0.25 * kVis,
+      0.48 + 0.30 * kVis,
+      0.30 + 0.10 * kVis,
     );
   }
   // показ внутреннего слоя
   innerGroup.visible = state.showInner;
+
+  // ---------- искры столкновений ----------
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const fp = flashes[i];
+    fp.age += dt;
+    if (fp.age > fp.maxLife) {
+      flashes[i] = flashes[flashes.length - 1];
+      flashes.pop();
+    }
+  }
+  const nf = flashes.length;
+  for (let i = 0; i < nf; i++) {
+    const fp = flashes[i];
+    const t = fp.age / fp.maxLife;        // 0..1
+    const a01 = (1 - t) * (1 - t);        // быстрый спад
+    const j = i * 3;
+    fPositions[j]     = fp.x;
+    fPositions[j + 1] = fp.y;
+    fPositions[j + 2] = fp.z;
+    const I = fp.intensity * a01;
+    // искра: горячий бело-жёлтый центр, рыжий по краям
+    fColors[j]     = 1.20 * I;
+    fColors[j + 1] = (0.85 - 0.30 * t) * I;
+    fColors[j + 2] = (0.45 - 0.40 * t) * I;
+    // быстро раздувается и затухает
+    fSizes[i] = fp.size * (1.0 + t * 1.4);
+  }
+  fGeom.setDrawRange(0, nf);
+  fGeom.attributes.position.needsUpdate = true;
+  fGeom.attributes.color.needsUpdate    = true;
+  fGeom.attributes.size.needsUpdate     = true;
+  fPoints.visible = state.showInner;
 
   // ---------- частицы тепла над корпусом ----------
   if (showHeat && kVis > 0.02) {
