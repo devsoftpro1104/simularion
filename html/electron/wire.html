@@ -224,6 +224,10 @@
         <label for="chkLattice">крист. решётка (ионы +)</label>
       </div>
       <div class="checkrow">
+        <input id="chkMagnetic" type="checkbox" checked>
+        <label for="chkMagnetic">магнитное поле B</label>
+      </div>
+      <div class="checkrow">
         <input id="chkAuto" type="checkbox">
         <label for="chkAuto">авто-вращение</label>
       </div>
@@ -245,7 +249,11 @@
         <b>Жёлтые стрелки</b> — направление поля <b>E</b> внутри
         провода (от <span class="pos">+</span> к <span class="neg">−</span>).<br>
         <b>Зелёная стрелка</b> — направление тока <b>I</b>
-        (по принятому направлению — обратно движению электронов).<br><br>
+        (по принятому направлению — обратно движению электронов).<br>
+        <b>Фиолетовые кольца</b> — магнитное поле <b>B</b>
+        вокруг провода (правило правой руки: большой палец — по
+        току <b>I</b>, остальные пальцы — по <b>B</b>). Чем больше
+        напряжение, тем сильнее ток и тем больше колец.<br><br>
         <b>ЛКМ</b> — поворот, <b>колесо</b> — зум, <b>ПКМ</b> — панорама.
       </div>
     </div>
@@ -260,7 +268,8 @@
       <span class="sw" style="background:#6ea8ff"></span>электроны e<sup>−</sup><br>
       <span class="sw" style="background:#d64545"></span>ионы решётки +<br>
       <span class="sw" style="background:#ffd060"></span>поле E<br>
-      <span class="sw" style="background:#59c065"></span>ток I
+      <span class="sw" style="background:#59c065"></span>ток I<br>
+      <span class="sw" style="background:#b070ff"></span>поле B (кольца)
     </div>
   </div>
 </div>
@@ -286,6 +295,7 @@ const state = {
   showCurrent: true,
   showTrails: false,
   showLattice: true,
+  showMagnetic: true,
   autoRotate: false,
   lastT: performance.now() / 1000,
   // physics buffers (sized MAX_N)
@@ -582,6 +592,95 @@ function buildLattice() {
   latticeGroup.add(latticeMesh);
 }
 
+// ---------- magnetic field rings (around the wire) ----------
+const magneticGroup = new THREE.Group();
+scene.add(magneticGroup);
+const MAGNETIC_MAX_RINGS = 8;
+const magneticRings = [];
+let magneticRingMat = null;
+let magneticArrowMat = null;
+
+function buildMagneticRings() {
+  magneticGroup.clear();
+  magneticRings.length = 0;
+  if (magneticRingMat)  magneticRingMat.dispose();
+  if (magneticArrowMat) magneticArrowMat.dispose();
+
+  const R = state.R;
+  const ringRadius = R * 1.7;
+  const ringTube  = Math.max(ringRadius * 0.022, 0.0008);
+  const arrowLen  = ringRadius * 0.22;
+  const arrowR    = arrowLen * 0.40;
+
+  magneticRingMat = new THREE.MeshBasicMaterial({
+    color: 0xb070ff, transparent: true, opacity: 0.55, depthWrite: false,
+  });
+  magneticArrowMat = new THREE.MeshBasicMaterial({
+    color: 0xc890ff, transparent: true, opacity: 0.85, depthWrite: false,
+  });
+
+  for (let i = 0; i < MAGNETIC_MAX_RINGS; i++) {
+    const grp = new THREE.Group();
+
+    // TorusGeometry lies in XY plane (axis = Z). Rotate so its axis = X (ring in YZ plane).
+    const torus = new THREE.Mesh(
+      new THREE.TorusGeometry(ringRadius, ringTube, 8, 48),
+      magneticRingMat
+    );
+    torus.rotation.y = Math.PI / 2;
+    grp.add(torus);
+
+    // 4 cone arrows around the ring, tangent direction = B for V>0
+    // (current I in -X for V>0  ⇒  at (0, R cosθ, R sinθ), B ∝ (0, sinθ, -cosθ))
+    const arrowCount = 4;
+    for (let k = 0; k < arrowCount; k++) {
+      const theta = (k / arrowCount) * Math.PI * 2 + 0.18;
+      const y = ringRadius * Math.cos(theta);
+      const z = ringRadius * Math.sin(theta);
+      const tangent = new THREE.Vector3(0, Math.sin(theta), -Math.cos(theta));
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(arrowR, arrowLen, 14),
+        magneticArrowMat
+      );
+      cone.position.set(0, y, z);
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent);
+      grp.add(cone);
+    }
+
+    grp.visible = false;
+    magneticGroup.add(grp);
+    magneticRings.push(grp);
+  }
+}
+
+function updateMagneticRings() {
+  if (!magneticRingMat) return;
+  const intensity = Math.min(1, Math.abs(state.V) / state.Vref);
+  const visibleN = (state.showMagnetic && state.V !== 0)
+    ? Math.max(1, Math.round(intensity * MAGNETIC_MAX_RINGS))
+    : 0;
+  const L = state.L;
+
+  // direction reversal for V<0: mirror across XZ plane reverses the tangent
+  magneticGroup.scale.y = state.V >= 0 ? 1 : -1;
+
+  const op = 0.40 + 0.55 * intensity;
+  magneticRingMat.opacity  = op * 0.75;
+  magneticArrowMat.opacity = op;
+
+  for (let i = 0; i < MAGNETIC_MAX_RINGS; i++) {
+    const ring = magneticRings[i];
+    if (i < visibleN) {
+      ring.visible = true;
+      const t = (visibleN === 1) ? 0.5 : (i + 0.5) / visibleN;
+      ring.position.x = -L / 2 + t * L;
+    } else {
+      ring.visible = false;
+    }
+  }
+  magneticGroup.visible = visibleN > 0;
+}
+
 // ---------- arrows (E-field & conventional current) ----------
 function makeArrow(length, color) {
   const grp = new THREE.Group();
@@ -749,8 +848,8 @@ function fitCameraToScene(force = false) {
   // and current arrow above the wire (~R+0.020+R*0.9)
   const termW = 0.014;
   const halfX = L / 2 + termW + R * 0.6 + 0.004;
-  const halfY = Math.max(R * 1.5, R + 0.020 + R * 0.9) + 0.004;
-  const halfZ = R * 1.5 + 0.004;
+  const halfY = Math.max(R * 1.8, R + 0.020 + R * 0.9) + 0.004;
+  const halfZ = Math.max(R * 1.8, R * 1.5) + 0.004;
 
   const fovV   = camera.fov * Math.PI / 180;
   const aspect = Math.max(camera.aspect || 1, 0.4);
@@ -797,10 +896,12 @@ function rebuildScene() {
   buildWire();
   buildTerminals();
   buildLattice();
+  buildMagneticRings();
   buildFieldArrows();
   buildCurrentArrow();
   updatePolarity();
   updateArrows();
+  updateMagneticRings();
   fitCameraToScene();
 }
 rebuildScene();
@@ -971,6 +1072,7 @@ function tick(now) {
   // dynamic visuals
   updatePolarity();
   updateArrows();
+  updateMagneticRings();
 
   // auto-rotate
   if (state.autoRotate) {
@@ -1052,6 +1154,7 @@ $('chkField').addEventListener('change',   e => { state.showField   = e.target.c
 $('chkCurrent').addEventListener('change', e => { state.showCurrent = e.target.checked; });
 $('chkTrails').addEventListener('change',  e => { state.showTrails  = e.target.checked; });
 $('chkLattice').addEventListener('change', e => { state.showLattice = e.target.checked; });
+$('chkMagnetic').addEventListener('change',e => { state.showMagnetic= e.target.checked; });
 $('chkAuto').addEventListener('change',    e => { state.autoRotate  = e.target.checked; });
 </script>
 </body>
