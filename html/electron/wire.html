@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Электроны в проводе под напряжением — 3D</title>
+<style>
+  :root {
+    --bg-0: #0d1117;
+    --bg-1: #161b22;
+    --bg-2: #21262d;
+    --line: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+    --plus: #ff6464;
+    --minus: #6ea8ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 290px 1fr;
+    gap: 10px;
+    height: 100vh;
+    padding: 10px;
+  }
+  .panel {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .group { margin-bottom: 16px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .row label {
+    flex: 0 0 80px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+  .row input[type="range"] { flex: 1; }
+  .row input[type="number"] { flex: 0 0 90px; }
+  .row .val {
+    flex: 0 0 70px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  input[type="number"] {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    background: transparent; height: 18px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    margin-top: -6px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { background: #79b8ff; }
+  input[type="range"]::-moz-range-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .checkrow {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px; color: var(--text-dim);
+  }
+  .checkrow input { accent-color: var(--accent); }
+  button {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  button:hover { background: #30363d; border-color: var(--text-dim); }
+  button:active { background: var(--accent-2); }
+  .help { color: var(--text-dim); line-height: 1.5; }
+  .help b { color: var(--text); }
+  .help .pos { color: var(--plus); font-weight: 600; }
+  .help .neg { color: var(--minus); font-weight: 600; }
+  #stage {
+    position: relative;
+    background: #05080d;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+  .hud {
+    position: absolute;
+    pointer-events: none;
+    color: var(--text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 4px #000;
+  }
+  .hud-top { top: 12px; left: 14px; }
+  .hud-bot { bottom: 10px; left: 14px; color: var(--text-dim); }
+  .hud-tip {
+    top: 12px; right: 14px;
+    color: var(--text-dim); text-align: right;
+  }
+  .legend {
+    position: absolute;
+    bottom: 10px; right: 14px;
+    color: var(--text-dim); text-align: right; font-size: 11px;
+    line-height: 1.6;
+  }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="panel">
+    <div class="group">
+      <h2>Параметры</h2>
+      <div class="row">
+        <label>Напряж. U:</label>
+        <input id="ctlV" type="range" min="-2000" max="2000" value="500" step="1">
+        <span class="val" id="lblV">+5.00 В</span>
+      </div>
+      <div class="row">
+        <label>Темп. T:</label>
+        <input id="ctlT" type="range" min="0" max="100" value="35" step="1">
+        <span class="val" id="lblT">0.35</span>
+      </div>
+      <div class="row">
+        <label>Длина L:</label>
+        <input id="ctlL" type="number" min="50" max="500" step="5" value="200">
+        <span class="val">мм</span>
+      </div>
+      <div class="row">
+        <label>Радиус R:</label>
+        <input id="ctlR" type="number" min="5" max="50" step="1" value="12">
+        <span class="val">мм</span>
+      </div>
+      <div class="row">
+        <label>Электронов:</label>
+        <input id="ctlN" type="number" min="50" max="1500" step="50" value="600">
+        <span class="val"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <button id="btnOff">Выключить U</button>
+      <button id="btnRev">Реверс ⇄</button>
+      <button id="btnMaxP">Максимум +</button>
+      <button id="btnMaxN">Максимум −</button>
+      <div class="checkrow">
+        <input id="chkField" type="checkbox" checked>
+        <label for="chkField">показывать поле E</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkCurrent" type="checkbox" checked>
+        <label for="chkCurrent">показывать ток I</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkTrails" type="checkbox" checked>
+        <label for="chkTrails">шлейфы движения</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkAuto" type="checkbox">
+        <label for="chkAuto">авто-вращение</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Что показано</h2>
+      <div class="help">
+        Голубые светящиеся точки — <b>свободные электроны</b> внутри
+        проводника. У них <b>тепловое</b> хаотическое движение
+        плюс небольшой <b>дрейф</b> в сторону <span class="pos">+</span>
+        полюса (электрон отрицателен, его притягивает плюс).<br><br>
+        <b>Жёлтые стрелки</b> — направление поля <b>E</b> внутри
+        провода (от <span class="pos">+</span> к <span class="neg">−</span>).<br>
+        <b>Зелёная стрелка</b> — направление тока <b>I</b>
+        (по принятому направлению — обратно движению электронов).<br><br>
+        <b>ЛКМ</b> — поворот, <b>колесо</b> — зум, <b>ПКМ</b> — панорама.
+      </div>
+    </div>
+  </aside>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div class="hud hud-top" id="hudTop"></div>
+    <div class="hud hud-tip">ЛКМ — поворот · колесо — зум · ПКМ — панорама</div>
+    <div class="hud hud-bot" id="hudBot"></div>
+    <div class="legend">
+      <span class="sw" style="background:#6ea8ff"></span>электроны e<sup>−</sup><br>
+      <span class="sw" style="background:#ffd060"></span>поле E<br>
+      <span class="sw" style="background:#59c065"></span>ток I
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+"use strict";
+
+// ---------- state ----------
+const MAX_N = 1500;
+const K_HIST = 4;     // history length for motion trails
+
+const state = {
+  V: 5.0,
+  Vref: 20.0,
+  L: 0.20,
+  R: 0.012,
+  N: 600,
+  temperature: 0.35,
+  showField: true,
+  showCurrent: true,
+  showTrails: true,
+  autoRotate: false,
+  lastT: performance.now() / 1000,
+  // physics buffers (sized MAX_N)
+  pos:  new Float32Array(MAX_N * 3),
+  vel:  new Float32Array(MAX_N * 3),
+  hist: new Float32Array(MAX_N * K_HIST * 3),
+  // running stats
+  meanVx: 0,
+};
+
+function spawnElectron(i) {
+  const j = i * 3;
+  state.pos[j]     = (Math.random() - 0.5) * state.L;
+  const r = Math.sqrt(Math.random()) * state.R * 0.93;
+  const a = Math.random() * 2 * Math.PI;
+  state.pos[j + 1] = r * Math.cos(a);
+  state.pos[j + 2] = r * Math.sin(a);
+  state.vel[j]     = 0;
+  state.vel[j + 1] = 0;
+  state.vel[j + 2] = 0;
+  for (let k = 0; k < K_HIST; k++) {
+    const h = (i * K_HIST + k) * 3;
+    state.hist[h]     = state.pos[j];
+    state.hist[h + 1] = state.pos[j + 1];
+    state.hist[h + 2] = state.pos[j + 2];
+  }
+}
+function reseedAll() {
+  for (let i = 0; i < state.N; i++) spawnElectron(i);
+}
+reseedAll();
+
+// ---------- three.js scene ----------
+const stage  = document.getElementById('stage');
+const canvas = document.getElementById('canvas');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setClearColor(0x05080d, 1);
+
+const scene = new THREE.Scene();
+
+// background gradient sphere
+{
+  const bgGeom = new THREE.SphereGeometry(5, 32, 16);
+  const bgMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: `varying vec3 vPos; void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader: `varying vec3 vPos;
+      void main(){
+        float h = normalize(vPos).y * 0.5 + 0.5;
+        vec3 top = vec3(0.075, 0.097, 0.137);
+        vec3 bot = vec3(0.030, 0.046, 0.070);
+        gl_FragColor = vec4(mix(bot, top, h), 1.0);
+      }`,
+  });
+  scene.add(new THREE.Mesh(bgGeom, bgMat));
+}
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+camera.position.set(0.32, 0.18, 0.30);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 0, 0);
+controls.minDistance = 0.05;
+controls.maxDistance = 3.0;
+
+// lights
+scene.add(new THREE.AmbientLight(0x6688aa, 0.45));
+{
+  const d = new THREE.DirectionalLight(0xffffff, 0.65);
+  d.position.set(0.5, 0.8, 0.6);
+  scene.add(d);
+  const d2 = new THREE.DirectionalLight(0x88aaff, 0.30);
+  d2.position.set(-0.7, -0.3, -0.5);
+  scene.add(d2);
+}
+
+// ---------- charge labels (+ / -) as canvas-textured sprites ----------
+function makeChargeTexture(symbol, rgb) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(128, 128, 10, 128, 128, 128);
+  grd.addColorStop(0,    `rgba(${rgb},1.0)`);
+  grd.addColorStop(0.55, `rgba(${rgb},0.55)`);
+  grd.addColorStop(1,    'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+  g.beginPath(); g.arc(128, 128, 82, 0, Math.PI * 2);
+  g.lineWidth = 7; g.strokeStyle = '#ffffff'; g.stroke();
+  g.font = 'bold 150px sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#ffffff'; g.fillText(symbol, 128, 138);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const plusTex  = makeChargeTexture('+', '255, 90, 90');
+const minusTex = makeChargeTexture('−', '110, 168, 255');
+
+// ---------- wire (translucent cylinder along X) ----------
+const wireGroup = new THREE.Group();
+scene.add(wireGroup);
+
+function buildWire() {
+  wireGroup.clear();
+  const L = state.L, R = state.R;
+
+  const cylMat = new THREE.MeshStandardMaterial({
+    color: 0xb87333, metalness: 0.65, roughness: 0.35,
+    transparent: true, opacity: 0.13,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const cyl = new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, L, 48, 1, true),
+    cylMat
+  );
+  cyl.rotation.z = Math.PI / 2;
+  wireGroup.add(cyl);
+
+  // end rings
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xd88f4e, side: THREE.DoubleSide,
+    transparent: true, opacity: 0.6, depthWrite: false,
+  });
+  for (const xPos of [-L / 2, L / 2]) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(R * 0.985, R * 1.02, 48),
+      ringMat
+    );
+    ring.rotation.y = Math.PI / 2;
+    ring.position.x = xPos;
+    wireGroup.add(ring);
+  }
+  // longitudinal stripes
+  const longMat = new THREE.LineBasicMaterial({
+    color: 0xd88f4e, transparent: true, opacity: 0.18, depthWrite: false,
+  });
+  const stripes = 16;
+  for (let k = 0; k < stripes; k++) {
+    const phi = (k / stripes) * Math.PI * 2;
+    const y = R * Math.cos(phi), z = R * Math.sin(phi);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([
+      -L / 2, y, z,  L / 2, y, z,
+    ], 3));
+    wireGroup.add(new THREE.Line(g, longMat));
+  }
+  // circumferential ribs every L/8
+  const ribN = 7;
+  for (let r = 1; r <= ribN; r++) {
+    const xPos = -L / 2 + (r / (ribN + 1)) * L;
+    const pts = [];
+    const segs = 48;
+    for (let i = 0; i <= segs; i++) {
+      const phi = (i / segs) * Math.PI * 2;
+      pts.push(xPos, R * Math.cos(phi), R * Math.sin(phi));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    wireGroup.add(new THREE.Line(g, longMat));
+  }
+}
+
+// ---------- terminals (+/- end blocks) ----------
+const termGroup = new THREE.Group();
+scene.add(termGroup);
+
+let rightBox, leftBox, rightSprite, leftSprite;
+
+function buildTerminals() {
+  termGroup.clear();
+  const L = state.L, R = state.R;
+  const W = 0.014, H = R * 3.0, D = R * 3.0;
+
+  const rightMat = new THREE.MeshStandardMaterial({
+    color: 0x882020, emissive: 0x110303, metalness: 0.5, roughness: 0.4,
+  });
+  rightBox = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), rightMat);
+  rightBox.position.x = L / 2 + W / 2 + 0.0015;
+  termGroup.add(rightBox);
+
+  const leftMat = new THREE.MeshStandardMaterial({
+    color: 0x1d3a78, emissive: 0x03081a, metalness: 0.5, roughness: 0.4,
+  });
+  leftBox = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), leftMat);
+  leftBox.position.x = -L / 2 - W / 2 - 0.0015;
+  termGroup.add(leftBox);
+
+  rightSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: plusTex, depthTest: false, transparent: true,
+  }));
+  rightSprite.scale.set(R * 1.7, R * 1.7, 1);
+  rightSprite.position.set(L / 2 + W + R * 0.6, 0, 0);
+  termGroup.add(rightSprite);
+
+  leftSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: minusTex, depthTest: false, transparent: true,
+  }));
+  leftSprite.scale.set(R * 1.7, R * 1.7, 1);
+  leftSprite.position.set(-L / 2 - W - R * 0.6, 0, 0);
+  termGroup.add(leftSprite);
+}
+
+function updatePolarity() {
+  if (!rightBox || !leftBox) return;
+  const pos = state.V >= 0;
+  rightSprite.material.map = pos ? plusTex : minusTex;
+  leftSprite.material.map  = pos ? minusTex : plusTex;
+  rightSprite.material.needsUpdate = true;
+  leftSprite.material.needsUpdate  = true;
+  const intensity = Math.min(1, Math.abs(state.V) / state.Vref);
+  if (pos) {
+    rightBox.material.color.setRGB(0.50, 0.13, 0.13);
+    rightBox.material.emissive.setRGB(0.35 * intensity, 0.05 * intensity, 0.05 * intensity);
+    leftBox.material.color.setRGB(0.11, 0.23, 0.47);
+    leftBox.material.emissive.setRGB(0.05 * intensity, 0.10 * intensity, 0.25 * intensity);
+  } else {
+    leftBox.material.color.setRGB(0.50, 0.13, 0.13);
+    leftBox.material.emissive.setRGB(0.35 * intensity, 0.05 * intensity, 0.05 * intensity);
+    rightBox.material.color.setRGB(0.11, 0.23, 0.47);
+    rightBox.material.emissive.setRGB(0.05 * intensity, 0.10 * intensity, 0.25 * intensity);
+  }
+}
+
+// ---------- arrows (E-field & conventional current) ----------
+function makeArrow(length, color) {
+  const grp = new THREE.Group();
+  const shaftLen = length * 0.65, tipLen = length * 0.35;
+  const shaftR  = length * 0.040, tipR  = length * 0.105;
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.85, depthWrite: false,
+  });
+  grp.userData.material = mat;
+
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 16),
+    mat
+  );
+  shaft.rotation.z = -Math.PI / 2;
+  shaft.position.x = -length / 2 + shaftLen / 2;
+  grp.add(shaft);
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(tipR, tipLen, 16), mat);
+  tip.rotation.z = -Math.PI / 2;
+  tip.position.x = length / 2 - tipLen / 2;
+  grp.add(tip);
+  return grp;
+}
+
+const fieldGroup = new THREE.Group();
+scene.add(fieldGroup);
+const fieldArrows = [];
+
+function buildFieldArrows() {
+  fieldGroup.clear();
+  fieldArrows.length = 0;
+  const n = 4;
+  const arrowLen = state.L / (n * 1.4);
+  for (let i = 0; i < n; i++) {
+    const x = -state.L / 2 + (i + 0.5) * state.L / n;
+    const a = makeArrow(arrowLen, 0xffd060);
+    a.position.set(x, 0, 0);
+    fieldGroup.add(a);
+    fieldArrows.push(a);
+  }
+}
+
+const currentGroup = new THREE.Group();
+scene.add(currentGroup);
+let currentArrow = null;
+
+function buildCurrentArrow() {
+  currentGroup.clear();
+  const arrowLen = state.L * 0.55;
+  currentArrow = makeArrow(arrowLen, 0x59c065);
+  currentArrow.position.set(0, state.R + 0.020, 0);
+
+  // "I" label
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = 'bold 96px sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#9ee5a8';
+  g.fillText('I', 64, 70);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, depthTest: false, transparent: true,
+  }));
+  sprite.scale.set(state.R * 1.4, state.R * 1.4, 1);
+  sprite.position.set(0, state.R + 0.020 + state.R * 0.9, 0);
+  currentGroup.add(currentArrow, sprite);
+}
+
+function updateArrows() {
+  // E-field: points from + to − inside the wire, so:
+  //   V>0 → + on right, E in -x direction → flip scale.x
+  //   V<0 → + on left,  E in +x direction → keep
+  const Vpos = state.V >= 0;
+  fieldGroup.scale.x  = Vpos ? -1 :  1;
+  // conventional current goes opposite to electron drift; electrons drift to +,
+  // so for V>0 (+ on right) electrons go +x and current goes -x
+  currentGroup.scale.x = Vpos ? -1 :  1;
+
+  const intensity = Math.min(1, Math.abs(state.V) / state.Vref);
+  for (const a of fieldArrows) {
+    a.userData.material.opacity = state.showField ? (0.18 + 0.72 * intensity) : 0;
+    a.visible = state.showField && intensity > 0.001;
+  }
+  currentGroup.visible = state.showCurrent && intensity > 0.001;
+  if (currentArrow) currentArrow.userData.material.opacity = 0.30 + 0.65 * intensity;
+}
+
+// ---------- electrons (Points) ----------
+function makeParticleTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0.00, 'rgba(255,255,255,1.0)');
+  grad.addColorStop(0.22, 'rgba(195,225,255,0.85)');
+  grad.addColorStop(0.55, 'rgba(110,168,255,0.40)');
+  grad.addColorStop(1.00, 'rgba(0,0,0,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const electronGeom = new THREE.BufferGeometry();
+electronGeom.setAttribute('position', new THREE.BufferAttribute(state.pos, 3));
+const eColors = new Float32Array(MAX_N * 3);
+for (let i = 0; i < MAX_N; i++) {
+  eColors[i*3] = 0.45; eColors[i*3 + 1] = 0.70; eColors[i*3 + 2] = 1.0;
+}
+electronGeom.setAttribute('color', new THREE.BufferAttribute(eColors, 3));
+const eSizes = new Float32Array(MAX_N).fill(0.011);
+electronGeom.setAttribute('size', new THREE.BufferAttribute(eSizes, 1));
+
+const particleMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    uMap: { value: makeParticleTexture() },
+    uPxPerUnit: { value: 1.0 },
+  },
+  vertexShader: `
+    attribute float size;
+    varying vec3 vColor;
+    uniform float uPxPerUnit;
+    void main(){
+      vColor = color;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = size * uPxPerUnit / -mv.z;
+    }`,
+  fragmentShader: `
+    uniform sampler2D uMap;
+    varying vec3 vColor;
+    void main(){
+      vec4 t = texture2D(uMap, gl_PointCoord);
+      gl_FragColor = vec4(vColor, 1.0) * t;
+    }`,
+  vertexColors: true,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+
+const electronPoints = new THREE.Points(electronGeom, particleMaterial);
+electronPoints.frustumCulled = false;
+scene.add(electronPoints);
+
+// ---------- motion trails (one line per K_HIST-1 history segment) ----------
+const SEGS_PER_E = K_HIST - 1;
+const trailsGeom = new THREE.BufferGeometry();
+const trailsPos  = new Float32Array(MAX_N * SEGS_PER_E * 2 * 3);
+const trailsCol  = new Float32Array(MAX_N * SEGS_PER_E * 2 * 3);
+trailsGeom.setAttribute('position', new THREE.BufferAttribute(trailsPos, 3));
+trailsGeom.setAttribute('color',    new THREE.BufferAttribute(trailsCol, 3));
+const trailsLine = new THREE.LineSegments(trailsGeom, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending,
+}));
+trailsLine.frustumCulled = false;
+scene.add(trailsLine);
+
+// ---------- build everything ----------
+function rebuildScene() {
+  buildWire();
+  buildTerminals();
+  buildFieldArrows();
+  buildCurrentArrow();
+  updatePolarity();
+  updateArrows();
+
+  const span = Math.max(state.L * 0.7, state.R * 4);
+  const targetDist = span * 2.6;
+  const cur = camera.position.length();
+  if (cur < targetDist * 0.4 || cur > targetDist * 2.0) {
+    camera.position.setLength(targetDist);
+  }
+  controls.minDistance = Math.max(0.02, targetDist * 0.18);
+  controls.maxDistance = Math.max(0.6, targetDist * 3.0);
+}
+rebuildScene();
+
+// ---------- resize ----------
+function resize() {
+  const rect = stage.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  particleMaterial.uniforms.uPxPerUnit.value =
+    h * 0.5 / Math.tan(camera.fov * 0.5 * Math.PI / 180);
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+// ---------- physics constants (tuned for visible drift, dimensionless) ----------
+const DRIFT_COEF     = 0.060;   // a_drift = DRIFT_COEF * V  (m/s²)
+const THERMAL_COEF   = 0.20;    // RMS per random kick = THERMAL_COEF * T
+const COLLISION_RATE = 12.0;    // 1/s, Langevin damping
+
+// ---------- animation loop ----------
+function tick(now) {
+  const tNow = now / 1000;
+  const dt = Math.max(1e-6, Math.min(0.05, tNow - state.lastT));
+  state.lastT = tNow;
+
+  const N = state.N;
+  const L = state.L, R = state.R;
+  const V = state.V;
+  const T = state.temperature;
+  const sigma = THERMAL_COEF * T;
+  const driftA = DRIFT_COEF * V;
+  const damp  = Math.exp(-COLLISION_RATE * dt);
+
+  const pos = state.pos, vel = state.vel, hist = state.hist;
+
+  // running average of vx for HUD
+  let sumVx = 0;
+
+  for (let i = 0; i < N; i++) {
+    const j = i * 3;
+
+    // shift history (oldest gets overwritten)
+    for (let k = K_HIST - 1; k > 0; k--) {
+      const a = (i * K_HIST + k) * 3;
+      const b = (i * K_HIST + k - 1) * 3;
+      hist[a]     = hist[b];
+      hist[a + 1] = hist[b + 1];
+      hist[a + 2] = hist[b + 2];
+    }
+
+    // thermal kicks (uniform, treated as Gaussian-ish per CLT)
+    vel[j]     += sigma * (Math.random() - 0.5);
+    vel[j + 1] += sigma * (Math.random() - 0.5);
+    vel[j + 2] += sigma * (Math.random() - 0.5);
+    // drift along x (electrons accelerate toward + terminal)
+    vel[j]     += driftA * dt;
+    // collisions (damping)
+    vel[j]     *= damp;
+    vel[j + 1] *= damp;
+    vel[j + 2] *= damp;
+
+    sumVx += vel[j];
+
+    // integrate position
+    pos[j]     += vel[j]     * dt;
+    pos[j + 1] += vel[j + 1] * dt;
+    pos[j + 2] += vel[j + 2] * dt;
+
+    // cylinder boundary: reflect normal component
+    const py = pos[j + 1], pz = pos[j + 2];
+    const rr = Math.sqrt(py * py + pz * pz);
+    if (rr > R) {
+      const ny = py / rr, nz = pz / rr;
+      pos[j + 1] = ny * R * 0.985;
+      pos[j + 2] = nz * R * 0.985;
+      const vn = vel[j + 1] * ny + vel[j + 2] * nz;
+      if (vn > 0) {
+        vel[j + 1] -= 2 * vn * ny;
+        vel[j + 2] -= 2 * vn * nz;
+      }
+    }
+
+    // axial wrap (periodic — keeps electron density stable in the visible segment)
+    let wrapped = false;
+    if (pos[j] >  L / 2) { pos[j] -= L; wrapped = true; }
+    else if (pos[j] < -L / 2) { pos[j] += L; wrapped = true; }
+
+    // write hist[0] = current pos
+    const h0 = i * K_HIST * 3;
+    hist[h0]     = pos[j];
+    hist[h0 + 1] = pos[j + 1];
+    hist[h0 + 2] = pos[j + 2];
+    if (wrapped) {
+      for (let k = 1; k < K_HIST; k++) {
+        const hk = (i * K_HIST + k) * 3;
+        hist[hk]     = pos[j];
+        hist[hk + 1] = pos[j + 1];
+        hist[hk + 2] = pos[j + 2];
+      }
+    }
+  }
+
+  state.meanVx = N > 0 ? sumVx / N : 0;
+
+  electronGeom.setDrawRange(0, N);
+  electronGeom.attributes.position.needsUpdate = true;
+
+  // motion trails
+  if (state.showTrails) {
+    let idx = 0;
+    for (let i = 0; i < N; i++) {
+      for (let k = 0; k < SEGS_PER_E; k++) {
+        const a = (i * K_HIST + k) * 3;
+        const b = (i * K_HIST + k + 1) * 3;
+        const fA = 1 - k / K_HIST;
+        const fB = 1 - (k + 1) / K_HIST;
+        const p = idx * 6;
+        trailsPos[p]     = hist[a];
+        trailsPos[p + 1] = hist[a + 1];
+        trailsPos[p + 2] = hist[a + 2];
+        trailsPos[p + 3] = hist[b];
+        trailsPos[p + 4] = hist[b + 1];
+        trailsPos[p + 5] = hist[b + 2];
+        trailsCol[p]     = 0.30 * fA;
+        trailsCol[p + 1] = 0.55 * fA;
+        trailsCol[p + 2] = 0.95 * fA;
+        trailsCol[p + 3] = 0.30 * fB;
+        trailsCol[p + 4] = 0.55 * fB;
+        trailsCol[p + 5] = 0.95 * fB;
+        idx++;
+      }
+    }
+    trailsGeom.setDrawRange(0, N * SEGS_PER_E * 2);
+    trailsGeom.attributes.position.needsUpdate = true;
+    trailsGeom.attributes.color.needsUpdate = true;
+    trailsLine.visible = true;
+  } else {
+    trailsLine.visible = false;
+  }
+
+  // dynamic visuals
+  updatePolarity();
+  updateArrows();
+
+  // auto-rotate
+  if (state.autoRotate) {
+    const ang = dt * 0.30;
+    const cA = Math.cos(ang), sA = Math.sin(ang);
+    const px = camera.position.x, pz = camera.position.z;
+    camera.position.x = px * cA - pz * sA;
+    camera.position.z = px * sA + pz * cA;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+
+  // HUD
+  const Vsign = state.V >= 0 ? '+' : '';
+  const driftDir = state.V > 0 ? '→' : (state.V < 0 ? '←' : '·');
+  const currentDir = state.V > 0 ? '←' : (state.V < 0 ? '→' : '·');
+  document.getElementById('hudTop').textContent =
+    `U = ${Vsign}${state.V.toFixed(2)} В    ` +
+    `L = ${(state.L * 1000).toFixed(0)} мм    ` +
+    `R = ${(state.R * 1000).toFixed(1)} мм    ` +
+    `N(e⁻) = ${state.N}    T = ${state.temperature.toFixed(2)}`;
+  document.getElementById('hudBot').textContent =
+    `средняя vₓ электронов = ${state.meanVx >= 0 ? '+' : ''}${state.meanVx.toFixed(4)} м/с    ` +
+    `дрейф e⁻ ${driftDir}    ток I ${currentDir}`;
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+
+const ctlV = $('ctlV'), lblV = $('lblV');
+function syncV() {
+  const v = +ctlV.value / 100;
+  state.V = v;
+  lblV.textContent = (v >= 0 ? '+' : '') + v.toFixed(2) + ' В';
+}
+ctlV.addEventListener('input', syncV);
+syncV();
+
+const ctlT = $('ctlT'), lblT = $('lblT');
+function syncT() {
+  const v = (+ctlT.value) / 100;
+  state.temperature = v;
+  lblT.textContent = v.toFixed(2);
+}
+ctlT.addEventListener('input', syncT);
+syncT();
+
+$('ctlL').addEventListener('input', e => {
+  const v = Math.max(20, +e.target.value || 0);
+  state.L = v * 1e-3;
+  reseedAll();
+  rebuildScene();
+});
+$('ctlR').addEventListener('input', e => {
+  const v = Math.max(2, +e.target.value || 0);
+  state.R = v * 1e-3;
+  reseedAll();
+  rebuildScene();
+});
+$('ctlN').addEventListener('input', e => {
+  let v = Math.max(10, Math.min(MAX_N, Math.round(+e.target.value || 1)));
+  const oldN = state.N;
+  state.N = v;
+  if (v > oldN) {
+    for (let i = oldN; i < v; i++) spawnElectron(i);
+  }
+});
+
+$('btnOff').addEventListener('click', () => { ctlV.value = 0; syncV(); });
+$('btnRev').addEventListener('click', () => { ctlV.value = -ctlV.value; syncV(); });
+$('btnMaxP').addEventListener('click', () => { ctlV.value = 2000; syncV(); });
+$('btnMaxN').addEventListener('click', () => { ctlV.value = -2000; syncV(); });
+
+$('chkField').addEventListener('change',   e => { state.showField   = e.target.checked; });
+$('chkCurrent').addEventListener('change', e => { state.showCurrent = e.target.checked; });
+$('chkTrails').addEventListener('change',  e => { state.showTrails  = e.target.checked; });
+$('chkAuto').addEventListener('change',    e => { state.autoRotate  = e.target.checked; });
+</script>
+</body>
+</html>

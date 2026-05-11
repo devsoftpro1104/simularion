@@ -1,0 +1,1070 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Магнитное поле катушки — 3D (реальное поле)</title>
+<style>
+  :root {
+    --bg-0: #0d1117;
+    --bg-1: #161b22;
+    --bg-2: #21262d;
+    --line: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 290px 1fr;
+    gap: 10px;
+    height: 100vh;
+    padding: 10px;
+  }
+  .panel {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .group { margin-bottom: 16px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .row label {
+    flex: 0 0 80px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+  .row input[type="range"] { flex: 1; }
+  .row input[type="number"] { flex: 0 0 90px; }
+  .row .val {
+    flex: 0 0 70px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  input[type="number"] {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 18px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    margin-top: -6px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { background: #79b8ff; }
+  input[type="range"]::-moz-range-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .checkrow {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px; color: var(--text-dim);
+  }
+  .checkrow input { accent-color: var(--accent); }
+  button {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  button:hover { background: #30363d; border-color: var(--text-dim); }
+  button:active { background: var(--accent-2); }
+  .help { color: var(--text-dim); line-height: 1.5; }
+  .help b { color: var(--text); }
+  #stage {
+    position: relative;
+    background: #05080d;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+  .hud {
+    position: absolute;
+    pointer-events: none;
+    color: var(--text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 4px #000;
+  }
+  .hud-top { top: 12px; left: 14px; }
+  .hud-bot { bottom: 10px; left: 14px; color: var(--text-dim); }
+  .hud-tip {
+    top: 12px; right: 14px;
+    color: var(--text-dim); text-align: right;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(88, 166, 255, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    margin-left: 6px;
+  }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="panel">
+    <div class="group">
+      <h2>Параметры <span class="badge">реальное B(z,r)</span></h2>
+      <div class="row">
+        <label>Ток I:</label>
+        <input id="ctlI" type="range" min="-2000" max="2000" value="0" step="1">
+        <span class="val" id="lblI">+0.00 А</span>
+      </div>
+      <div class="row">
+        <label>Радиус R:</label>
+        <input id="ctlR" type="number" min="2" max="200" step="1" value="40">
+        <span class="val">мм</span>
+      </div>
+      <div class="row">
+        <label>Длина L:</label>
+        <input id="ctlL" type="number" min="2" max="500" step="2" value="120">
+        <span class="val">мм</span>
+      </div>
+      <div class="row">
+        <label>Витков N:</label>
+        <input id="ctlN" type="number" min="1" max="200" step="1" value="6">
+        <span class="val"></span>
+      </div>
+      <div class="row">
+        <label>Линий:</label>
+        <input id="ctlSeeds" type="number" min="3" max="14" step="1" value="3">
+        <span class="val"></span>
+      </div>
+      <div class="row">
+        <label>Меридианы:</label>
+        <input id="ctlPhi" type="number" min="3" max="48" step="1" value="12">
+        <span class="val"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <button id="btnOff">Выключить ток</button>
+      <button id="btnRev">Реверс ⇄</button>
+      <button id="btnMaxP">Максимум +</button>
+      <button id="btnMaxN">Максимум −</button>
+      <div class="checkrow">
+        <input id="chkAuto" type="checkbox">
+        <label for="chkAuto">авто-вращение</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkLines" type="checkbox" checked>
+        <label for="chkLines">показывать линии</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Как считается</h2>
+      <div class="help">
+        Магнитное поле <b>B(z, r)</b> вычисляется аналитически
+        как сумма полей <b>N</b> круговых витков радиуса <b>R</b>
+        (закон Био–Савара через полные эллиптические интегралы
+        <b>K</b> и <b>E</b>).<br><br>
+        Силовые линии трассируются методом
+        <b>Рунге–Кутты 4-го порядка</b> по векторному полю <b>B</b>,
+        замыкаются по симметрии <b>z → −z</b>
+        и разворачиваются в 3D вокруг оси катушки.<br><br>
+        <b>ЛКМ</b> — поворот, <b>колесо</b> — зум, <b>ПКМ</b> — панорама.
+      </div>
+    </div>
+  </aside>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div class="hud hud-top" id="hudTop"></div>
+    <div class="hud hud-tip">ЛКМ — поворот · колесо — зум · ПКМ — панорама</div>
+    <div class="hud hud-bot" id="hudBot"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+"use strict";
+
+const MU0 = 4 * Math.PI * 1e-7;
+
+// ---------- elliptic integrals K(m), E(m) via AGM ----------
+function ellipKE(m) {
+  if (m <= 0) return { K: Math.PI / 2, E: Math.PI / 2 };
+  if (m >= 1) m = 1 - 1e-12;
+  let a = 1;
+  let b = Math.sqrt(1 - m);
+  let c = Math.sqrt(m);
+  let sum = 0.5 * c * c;     // weight 2^(n-1) for c_n²; c_0 = sqrt(m)
+  let weight = 1.0;          // for n = 1, 2, ...
+  for (let i = 0; i < 30; i++) {
+    if (Math.abs(c) < 1e-14) break;
+    const an = 0.5 * (a + b);
+    const bn = Math.sqrt(a * b);
+    c = 0.5 * (a - b);
+    sum += weight * c * c;
+    weight *= 2;
+    a = an;
+    b = bn;
+  }
+  const K = Math.PI / (2 * a);
+  const E = K * (1 - sum);
+  return { K, E };
+}
+
+// ---------- physics: B field of solenoid (stack of N loops) ----------
+function loopBzBr(z, r, z0, a, Iloop) {
+  // single circular loop at z=z0, radius a, current Iloop
+  const dz = z - z0;
+  const dz2 = dz * dz;
+  const am = a - r, ap = a + r;
+  const alpha2 = am * am + dz2;
+  const beta2  = ap * ap + dz2;
+  const beta   = Math.sqrt(beta2);
+  if (alpha2 < 1e-18 || beta < 1e-12) return [0, 0];
+  let m = 4 * a * r / beta2;
+  if (m > 0.999999) m = 0.999999;
+  if (m < 0) m = 0;
+  const { K, E } = ellipKE(m);
+  const inv = 1.0 / (alpha2 * beta);
+  const C = MU0 * Iloop / (2 * Math.PI);
+  const Bz = C * inv * (alpha2 * K + (a * a - r * r - dz2) * E);
+  let Br = 0;
+  if (r > 1e-9) {
+    Br = C * (dz / r) * inv * (-alpha2 * K + (a * a + r * r + dz2) * E);
+  }
+  return [Bz, Br];
+}
+
+function solenoidB(z, r, I) {
+  // sample at most 20 representative loops for performance — visually identical to using all N
+  const N = state.N;
+  const sampleN = Math.min(N, 20);
+  const Iloop = (I * N) / sampleN;
+  let Bz = 0, Br = 0;
+  for (let k = 0; k < sampleN; k++) {
+    const t = sampleN === 1 ? 0.5 : k / (sampleN - 1);
+    const z0 = -state.L / 2 + t * state.L;
+    const [bz, br] = loopBzBr(z, r, z0, state.R, Iloop);
+    Bz += bz;
+    Br += br;
+  }
+  return [Bz, Br];
+}
+
+// on-axis closed form for HUD readout
+function bOnAxisExact(I) {
+  const N = state.N, R = state.R, L = state.L;
+  if (L <= 0 || N <= 0) return 0;
+  const n = N / L;
+  const a = (0 + L / 2) / Math.sqrt((0 + L / 2) ** 2 + R * R);
+  const b = (0 - L / 2) / Math.sqrt((0 - L / 2) ** 2 + R * R);
+  return 0.5 * MU0 * n * I * (a - b);
+}
+function bIdeal(I) {
+  return state.L > 0 ? MU0 * (state.N / state.L) * I : 0;
+}
+
+// ---------- field-line tracing (RK4 in z-r plane, then mirror by symmetry) ----------
+function tracingStep(z, r) {
+  // returns unit-direction (dx, dy) along B/|B| with I = +1 (sign handled elsewhere)
+  const [Bz, Br] = solenoidB(z, r, 1);
+  const mag = Math.hypot(Bz, Br);
+  if (mag < 1e-30) return [0, 0];
+  return [Bz / mag, Br / mag];
+}
+
+function traceUpperHalf(rSeed, ds, maxSteps) {
+  const pts = [[0, rSeed]];
+  let z = 0, r = rSeed;
+  let movedAway = false;
+  const awayThreshold = 0.05 * state.L;
+  for (let i = 0; i < maxSteps; i++) {
+    const [k1x, k1y] = tracingStep(z, r);
+    const [k2x, k2y] = tracingStep(z + 0.5 * ds * k1x, Math.max(1e-7, r + 0.5 * ds * k1y));
+    const [k3x, k3y] = tracingStep(z + 0.5 * ds * k2x, Math.max(1e-7, r + 0.5 * ds * k2y));
+    const [k4x, k4y] = tracingStep(z + ds * k3x, Math.max(1e-7, r + ds * k3y));
+    const dx = ds * (k1x + 2 * k2x + 2 * k3x + k4x) / 6;
+    const dy = ds * (k1y + 2 * k2y + 2 * k3y + k4y) / 6;
+    if (!isFinite(dx) || !isFinite(dy)) break;
+    const newZ = z + dx;
+    let   newR = r + dy;
+    if (newR < 1e-7) newR = 1e-7;
+
+    if (Math.abs(newZ) > awayThreshold) movedAway = true;
+    if (movedAway && z * newZ <= 0) {
+      // linear interpolation to z = 0
+      const t = Math.abs(newZ - z) < 1e-15 ? 1 : z / (z - newZ);
+      const crossR = r + t * (newR - r);
+      pts.push([0, Math.max(1e-7, crossR)]);
+      return pts;
+    }
+    z = newZ; r = newR;
+    pts.push([z, r]);
+  }
+  // didn't close — snap to z=0 forcibly so the loop still renders
+  pts.push([0, r]);
+  return pts;
+}
+
+function buildClosedLoop(upperPts) {
+  const closed = upperPts.slice();
+  // append mirror (z negated) in reverse, skipping endpoints to avoid duplicates
+  for (let i = upperPts.length - 2; i >= 1; i--) {
+    closed.push([-upperPts[i][0], upperPts[i][1]]);
+  }
+  return closed;
+}
+
+// ---------- state ----------
+const state = {
+  I: 0.0,
+  R: 0.04,
+  L: 0.12,
+  N: 6,
+  nSeeds: 3,
+  nPhi: 12,
+  Iref: 20.0,
+  fieldLines: [],   // [{seed, points: [[z,r],...]}]
+  particles: [],
+  spawnAcc: 0,
+  lastT: performance.now() / 1000,
+  autoRotate: false,
+  showLines: true,
+};
+
+function rebuildFieldLineData() {
+  const n = state.nSeeds;
+  // seed radii distributed like coil.html's scale-layers: a few inner lines
+  // (tight, inside-coil) and a few outer lines (wide, far around) — avoids the
+  // dense cluster of nearly-identical loops near the axis.
+  const seeds = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;             // 0..1
+    // bias toward the wire so layers spread more like the picture
+    const frac = 0.20 + 0.72 * Math.pow(t, 0.85);
+    seeds.push(frac * state.R);
+  }
+
+  const scale = Math.max(state.R, state.L * 0.5);
+  const ds = Math.max(scale * 0.018, 1e-5);
+  const maxSteps = 4500;
+
+  state.fieldLines = seeds.map((rSeed, i) => {
+    const upper = traceUpperHalf(rSeed, ds, maxSteps);
+    const points = buildClosedLoop(upper);
+    // inner loops (small i) appear at low current; outer loops need more
+    const threshold = Math.min(0.55, i * 0.11);
+    return { seed: rSeed, points, threshold };
+  });
+  state.particles = state.particles.filter(p => p.line < state.fieldLines.length);
+}
+
+// ---------- three.js setup ----------
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('canvas');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setClearColor(0x05080d, 1);
+
+const scene = new THREE.Scene();
+
+// background gradient
+{
+  const bgGeom = new THREE.SphereGeometry(5, 32, 16);
+  const bgMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {},
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vPos;
+      void main() {
+        float h = normalize(vPos).y * 0.5 + 0.5;
+        vec3 top = vec3(0.075, 0.097, 0.137);
+        vec3 bot = vec3(0.030, 0.046, 0.070);
+        gl_FragColor = vec4(mix(bot, top, h), 1.0);
+      }`,
+  });
+  scene.add(new THREE.Mesh(bgGeom, bgMat));
+}
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+camera.position.set(0.28, 0.18, 0.34);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 0, 0);
+controls.minDistance = 0.05;
+controls.maxDistance = 3.0;
+
+// lighting
+scene.add(new THREE.AmbientLight(0x6688aa, 0.45));
+{
+  const d = new THREE.DirectionalLight(0xffffff, 0.7);
+  d.position.set(0.5, 0.8, 0.6);
+  scene.add(d);
+  const d2 = new THREE.DirectionalLight(0x88aaff, 0.35);
+  d2.position.set(-0.7, -0.3, -0.5);
+  scene.add(d2);
+}
+
+const axisGroup = new THREE.Group();
+scene.add(axisGroup);
+function rebuildAxis(spanX) {
+  axisGroup.clear();
+  const segs = 60;
+  const positions = [];
+  for (let i = 0; i < segs; i++) {
+    const t0 = i / segs, t1 = (i + 0.55) / segs;
+    positions.push(-spanX + t0 * 2 * spanX, 0, 0);
+    positions.push(-spanX + t1 * 2 * spanX, 0, 0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const m = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 });
+  axisGroup.add(new THREE.LineSegments(g, m));
+}
+
+// ---------- coil wire (helix tube) ----------
+const wireGroup = new THREE.Group();
+scene.add(wireGroup);
+
+const wireMaterial = new THREE.MeshStandardMaterial({
+  color: 0xd9b16a,
+  metalness: 0.7,
+  roughness: 0.35,
+  emissive: 0x000000,
+});
+
+const coilDiskMat = new THREE.MeshBasicMaterial({
+  color: 0x6eafdc, transparent: true, opacity: 0.10, side: THREE.DoubleSide,
+});
+const coilDiskEdgeMat = new THREE.LineBasicMaterial({
+  color: 0x6eafdc, transparent: true, opacity: 0.6,
+});
+
+function buildWire() {
+  wireGroup.clear();
+  const N = Math.max(1, state.N);
+  const R = state.R;
+  const L = state.L;
+  const samples = Math.max(64, N * 40);
+  const pts = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const x = -L / 2 + t * L;
+    const ang = t * N * Math.PI * 2;
+    pts.push(new THREE.Vector3(x, R * Math.sin(ang), R * Math.cos(ang)));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const tubeRadius = Math.max(0.0008, Math.min(R * 0.06, 0.0025));
+  const tubeGeom = new THREE.TubeGeometry(curve, samples, tubeRadius, 8, false);
+  wireGroup.add(new THREE.Mesh(tubeGeom, wireMaterial));
+
+  // leads — go DOWN to terminals (− on start side, + on end side)
+  const leadLen = R * 0.75 + 0.015;
+  const startPt = pts[0];
+  const endPt = pts[pts.length - 1];
+  const startTip = new THREE.Vector3(startPt.x - leadLen * 0.15, startPt.y - leadLen, startPt.z);
+  const endTip   = new THREE.Vector3(endPt.x   + leadLen * 0.15, endPt.y   - leadLen, endPt.z);
+
+  const minusLeadMat = new THREE.MeshStandardMaterial({
+    color: 0x4a2916, metalness: 0.35, roughness: 0.55,
+  });
+  const plusLeadMat = new THREE.MeshStandardMaterial({
+    color: 0xefb84a, metalness: 0.75, roughness: 0.35,
+  });
+
+  for (const seg of [
+    { pts: [startPt, startTip], mat: minusLeadMat },
+    { pts: [endPt,   endTip],   mat: plusLeadMat },
+  ]) {
+    const c = new THREE.CatmullRomCurve3(seg.pts);
+    const g = new THREE.TubeGeometry(c, 16, tubeRadius, 8, false);
+    wireGroup.add(new THREE.Mesh(g, seg.mat));
+  }
+
+  // terminal caps with + / − labels
+  const capRadius = Math.max(R * 0.16, 0.0055);
+  const sphereGeomCap = new THREE.SphereGeometry(capRadius, 24, 14);
+  for (const cap of [
+    { pos: startTip, mat: minusLeadMat, sym: '−', fg: '#ffffff' },
+    { pos: endTip,   mat: plusLeadMat,  sym: '+', fg: '#1c1408' },
+  ]) {
+    const m = new THREE.Mesh(sphereGeomCap, cap.mat);
+    m.position.copy(cap.pos);
+    wireGroup.add(m);
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = cap.fg;
+    ctx.font = 'bold 110px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(cap.sym, 64, 70);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(cv),
+      transparent: true,
+      depthTest: false,
+    }));
+    sp.position.copy(cap.pos);
+    sp.scale.set(capRadius * 2.3, capRadius * 2.3, 1);
+    wireGroup.add(sp);
+  }
+
+  // end-disks
+  const ringInner = R * 0.001;
+  const ringOuter = R * 1.05;
+  for (const xPos of [-L / 2, L / 2]) {
+    const disk = new THREE.Mesh(
+      new THREE.RingGeometry(ringInner, ringOuter, 48),
+      coilDiskMat,
+    );
+    disk.rotation.y = Math.PI / 2;
+    disk.position.x = xPos;
+    wireGroup.add(disk);
+
+    const ringPts = [];
+    for (let i = 0; i <= 64; i++) {
+      const a = (i / 64) * Math.PI * 2;
+      ringPts.push(xPos, R * Math.sin(a), R * Math.cos(a));
+    }
+    const rg = new THREE.BufferGeometry();
+    rg.setAttribute('position', new THREE.Float32BufferAttribute(ringPts, 3));
+    wireGroup.add(new THREE.Line(rg, coilDiskEdgeMat));
+  }
+}
+
+// ---------- N / S pole markers ----------
+const polesGroup = new THREE.Group();
+scene.add(polesGroup);
+
+function buildPoles() {
+  polesGroup.clear();
+  const sign = state.I > 1e-6 ? 1 : (state.I < -1e-6 ? -1 : 0);
+  if (sign === 0) return;
+
+  // Helix in buildWire() is wound such that +I gives B in +x inside.
+  // Therefore +x face = N, -x face = S for I > 0; reversed for I < 0.
+  const nX = sign > 0 ?  1 : -1;
+  const sX = -nX;
+  const offsetX = state.L / 2 + state.R * 1.25;
+  const sphereR = Math.max(state.R * 0.30, 0.006);
+
+  const nMat = new THREE.MeshStandardMaterial({
+    color: 0xd92828, emissive: 0x501010, metalness: 0.1, roughness: 0.45,
+  });
+  const sMat = new THREE.MeshStandardMaterial({
+    color: 0x21a851, emissive: 0x103a18, metalness: 0.1, roughness: 0.45,
+  });
+  const sphereGeom = new THREE.SphereGeometry(sphereR, 32, 18);
+
+  const nSphere = new THREE.Mesh(sphereGeom, nMat);
+  nSphere.position.set(nX * offsetX, 0, 0);
+  polesGroup.add(nSphere);
+  const sSphere = new THREE.Mesh(sphereGeom, sMat);
+  sSphere.position.set(sX * offsetX, 0, 0);
+  polesGroup.add(sSphere);
+
+  const makeLabel = (text) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.font = 'bold 92px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 64, 68);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(c),
+      transparent: true,
+      depthTest: false,
+    }));
+    sp.scale.set(sphereR * 1.6, sphereR * 1.6, 1);
+    return sp;
+  };
+  const nLbl = makeLabel('N'); nLbl.position.set(nX * offsetX, 0, 0); polesGroup.add(nLbl);
+  const sLbl = makeLabel('S'); sLbl.position.set(sX * offsetX, 0, 0); polesGroup.add(sLbl);
+}
+
+// ---------- direction arrows on field lines ----------
+const arrowsGroup = new THREE.Group();
+scene.add(arrowsGroup);
+const arrowLayerMaterials = []; // one material per field-line layer (fades with line)
+
+function buildArrows() {
+  arrowsGroup.clear();
+  arrowLayerMaterials.length = 0;
+  const sign = state.I > 1e-6 ? 1 : (state.I < -1e-6 ? -1 : 0);
+  if (sign === 0) return;
+  const reversed = sign < 0;
+
+  const colorHex = reversed ? 0xff8aaa : 0x7ec1ec;
+
+  const scaleRef = Math.max(state.R, state.L * 0.25);
+  const arrowLen = Math.max(scaleRef * 0.07, 0.003);
+  const arrowR = arrowLen * 0.38;
+  const coneGeom = new THREE.ConeGeometry(arrowR, arrowLen, 10);
+  coneGeom.translate(0, -arrowLen * 0.5, 0); // apex at local origin
+
+  // 2 arrows per loop, but only on every other meridian — matches the
+  // sparseness of the picture and keeps total cone count low.
+  const arrowSpotsPerLine = 2;
+  const nPhi = state.nPhi;
+  const phiStep = Math.max(1, Math.floor(nPhi / 3)); // ≤3 meridians with arrows
+  const up = new THREE.Vector3(0, 1, 0);
+
+  for (let li = 0; li < state.fieldLines.length; li++) {
+    // per-line material so we can fade each layer independently
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex, transparent: true, opacity: 0.0, depthWrite: false,
+    });
+    arrowLayerMaterials.push(mat);
+    const pts = state.fieldLines[li].points;
+    const nPts = pts.length;
+    if (nPts < 8) continue;
+
+    for (let p = 0; p < nPhi; p += phiStep) {
+      const phi = (p / nPhi) * Math.PI * 2;
+      const cs = Math.cos(phi), sn = Math.sin(phi);
+      // offset arrow placement per meridian so they don't align in a ring
+      const offset = ((p % 2) === 0) ? 0.25 : 0.75;
+
+      for (let a = 0; a < arrowSpotsPerLine; a++) {
+        const frac = (a + offset) / arrowSpotsPerLine;
+        const idx = Math.min(nPts - 2, Math.floor(frac * nPts));
+        const nxtIdx = (idx + 2) % nPts;
+        const cur = pts[idx];
+        const next = pts[nxtIdx];
+
+        const pos = new THREE.Vector3(cur[0], cur[1] * sn, cur[1] * cs);
+        const dz = next[0] - cur[0];
+        const dr = next[1] - cur[1];
+        const dirVec = new THREE.Vector3(dz, dr * sn, dr * cs);
+        if (reversed) dirVec.negate();
+        if (dirVec.lengthSq() < 1e-12) continue;
+        dirVec.normalize();
+
+        const cone = new THREE.Mesh(coneGeom, mat);
+        cone.position.copy(pos);
+        cone.quaternion.setFromUnitVectors(up, dirVec);
+        arrowsGroup.add(cone);
+      }
+    }
+  }
+}
+
+// ---------- field lines ----------
+const linesGroup = new THREE.Group();
+scene.add(linesGroup);
+const layerMaterials = [];
+
+function buildFieldLineMeshes() {
+  linesGroup.clear();
+  layerMaterials.length = 0;
+
+  const nPhi = state.nPhi;
+  for (let li = 0; li < state.fieldLines.length; li++) {
+    const pts = state.fieldLines[li].points;
+    const positions = [];
+    for (let p = 0; p < nPhi; p++) {
+      const phi = (p / nPhi) * Math.PI * 2;
+      const cs = Math.cos(phi), sn = Math.sin(phi);
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        positions.push(a[0], a[1] * sn, a[1] * cs);
+        positions.push(b[0], b[1] * sn, b[1] * cs);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const m = new THREE.LineBasicMaterial({
+      color: 0x6aa7d6,
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+    });
+    layerMaterials.push(m);
+    linesGroup.add(new THREE.LineSegments(g, m));
+  }
+}
+
+// ---------- particles ----------
+const MAX_PARTICLES = 1400;
+const particleGeom = new THREE.BufferGeometry();
+const particlePositions = new Float32Array(MAX_PARTICLES * 3);
+const particleColors = new Float32Array(MAX_PARTICLES * 3);
+const particleSizes = new Float32Array(MAX_PARTICLES);
+particleGeom.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+particleGeom.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+particleGeom.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+
+function makeParticleTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0.00, 'rgba(255,255,250,1.0)');
+  grad.addColorStop(0.22, 'rgba(220,235,255,0.85)');
+  grad.addColorStop(0.55, 'rgba(120,170,230,0.35)');
+  grad.addColorStop(1.00, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const particleMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    uMap: { value: makeParticleTexture() },
+    uPxPerUnit: { value: 1.0 },
+  },
+  vertexShader: `
+    attribute float size;
+    varying vec3 vColor;
+    uniform float uPxPerUnit;
+    void main() {
+      vColor = color;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = size * uPxPerUnit / -mv.z;
+    }`,
+  fragmentShader: `
+    uniform sampler2D uMap;
+    varying vec3 vColor;
+    void main() {
+      vec4 t = texture2D(uMap, gl_PointCoord);
+      gl_FragColor = vec4(vColor, 1.0) * t;
+    }`,
+  vertexColors: true,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+
+const particlePoints = new THREE.Points(particleGeom, particleMaterial);
+particlePoints.frustumCulled = false;
+scene.add(particlePoints);
+
+// ---------- assembly ----------
+let cameraFitted = false;
+function rebuildAll() {
+  rebuildFieldLineData();
+  buildWire();
+  buildFieldLineMeshes();
+  buildPoles();
+  buildArrows();
+
+  let maxR = 0, maxAbsZ = state.L / 2;
+  for (const ln of state.fieldLines) {
+    for (const [z, r] of ln.points) {
+      if (r > maxR) maxR = r;
+      if (Math.abs(z) > maxAbsZ) maxAbsZ = Math.abs(z);
+    }
+  }
+  rebuildAxis(maxAbsZ * 1.05);
+
+  // Tight framing on the coil + pole-marker extent so the helix fills the
+  // viewport at startup (when there are no field lines yet).
+  const coilHalfW = state.L / 2 + state.R * 1.6;
+  const coilHalfH = state.R * 1.4;
+  const sceneSpan = Math.max(coilHalfW, coilHalfH);
+  const targetDist = sceneSpan * 2.4;
+
+  const cur = camera.position.length();
+  if (!cameraFitted || cur < targetDist * 0.4 || cur > targetDist * 2.5) {
+    camera.position.setLength(targetDist);
+    cameraFitted = true;
+  }
+  // allow zooming out far enough to see the full extent of the field lines
+  const fieldSpan = Math.max(maxR, maxAbsZ) * 1.2;
+  controls.maxDistance = Math.max(0.6, fieldSpan * 6.0);
+  controls.minDistance = Math.max(0.02, targetDist * 0.12);
+}
+rebuildAll();
+
+// ---------- resize ----------
+function resize() {
+  const rect = stage.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  particleMaterial.uniforms.uPxPerUnit.value =
+    h * 0.5 / Math.tan(camera.fov * 0.5 * Math.PI / 180);
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+// ---------- animation ----------
+function tick(now) {
+  const tNow = now / 1000;
+  const dt = Math.max(1e-6, Math.min(0.1, tNow - state.lastT));
+  state.lastT = tNow;
+
+  const Iabs = Math.abs(state.I);
+  const Inorm = Math.min(1.0, Iabs / state.Iref);
+  const sign = state.I >= 0 ? 1.0 : -1.0;
+  // speed and spawn rate are now purely proportional to current magnitude
+  const speed = 0.85 * Inorm;
+  const spawnRate = 130 * Inorm;
+
+  // update particles
+  const particles = state.particles;
+  let kept = 0;
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.t = (p.t + speed * dt * sign + 1.0) % 1.0;
+    p.age += dt;
+    if (p.age < p.maxLife) particles[kept++] = p;
+  }
+  particles.length = kept;
+
+  // spawn — only on lines already visible at the current I level
+  if (spawnRate > 0 && state.fieldLines.length) {
+    state.spawnAcc += spawnRate * dt;
+    let n = state.spawnAcc | 0;
+    if (n > 40) n = 40;
+    state.spawnAcc -= n;
+    let candidates = [];
+    for (let i = 0; i < state.fieldLines.length; i++) {
+      if ((Inorm - state.fieldLines[i].threshold) > -0.02) candidates.push(i);
+    }
+    if (!candidates.length) candidates = [0];
+    while (n-- > 0) {
+      const lineIdx = candidates[(Math.random() * candidates.length) | 0];
+      const phiSlot = (Math.random() * state.nPhi) | 0;
+      const phi = (phiSlot / state.nPhi) * Math.PI * 2;
+      particles.push({
+        line: lineIdx,
+        phi,
+        t: Math.random(),
+        age: 0,
+        maxLife: 1.6 + 2.6 * Math.random(),
+      });
+    }
+  }
+  if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
+
+  // write buffers
+  const reversed = state.I < 0;
+  const colR = reversed ? 1.00 : 0.55;
+  const colG = reversed ? 0.55 : 0.85;
+  const colB = reversed ? 0.75 : 1.00;
+  const np = particles.length;
+  for (let i = 0; i < np; i++) {
+    const p = particles[i];
+    const pts = state.fieldLines[p.line].points;
+    const nPts = pts.length;
+    const iF = p.t * nPts;
+    let iA = iF | 0; if (iA >= nPts) iA = 0;
+    const iB = (iA + 1) % nPts;
+    const f = iF - (iF | 0);
+    const a = pts[iA], b = pts[iB];
+    const z = a[0] + (b[0] - a[0]) * f;
+    const r = a[1] + (b[1] - a[1]) * f;
+    const cs = Math.cos(p.phi), sn = Math.sin(p.phi);
+
+    const lifeFrac = Math.max(0, 1 - p.age / p.maxLife);
+    const fadeIn = Math.min(1, p.age / 0.18);
+    const a01 = lifeFrac * fadeIn;
+    const j = i * 3;
+    particlePositions[j]     = z;
+    particlePositions[j + 1] = r * sn;
+    particlePositions[j + 2] = r * cs;
+    particleColors[j]        = colR * a01;
+    particleColors[j + 1]    = colG * a01;
+    particleColors[j + 2]    = colB * a01;
+    particleSizes[i]         = 0.012 + 0.004 * Inorm;
+  }
+  particleGeom.setDrawRange(0, np);
+  particleGeom.attributes.position.needsUpdate = true;
+  particleGeom.attributes.color.needsUpdate = true;
+  particleGeom.attributes.size.needsUpdate = true;
+
+  // threshold-based per-layer opacity: inner loops appear at low I, outer loops
+  // only when current is strong enough — same idea as coil.html.
+  for (let i = 0; i < layerMaterials.length; i++) {
+    const ln = state.fieldLines[i];
+    const visibility = Math.max(0, Math.min(1, (Inorm - ln.threshold) / 0.15));
+    const alpha = state.showLines ? 0.45 * visibility : 0;
+    layerMaterials[i].opacity = alpha;
+    layerMaterials[i].visible = alpha > 0.001;
+    if (arrowLayerMaterials[i]) {
+      const aAlpha = state.showLines ? 0.9 * visibility : 0;
+      arrowLayerMaterials[i].opacity = aAlpha;
+      arrowLayerMaterials[i].visible = aAlpha > 0.001;
+    }
+  }
+
+  // wire emissive glow
+  const emitT = Math.min(1, Iabs / state.Iref);
+  if (reversed) wireMaterial.emissive.setRGB(0.30 * emitT, 0.07 * emitT, 0.18 * emitT);
+  else          wireMaterial.emissive.setRGB(0.07 * emitT, 0.18 * emitT, 0.30 * emitT);
+
+  // auto-rotate
+  if (state.autoRotate) {
+    const ang = dt * 0.35;
+    const cA = Math.cos(ang), sA = Math.sin(ang);
+    const px = camera.position.x, pz = camera.position.z;
+    camera.position.x = px * cA - pz * sA;
+    camera.position.z = px * sA + pz * cA;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+
+  // HUD
+  const Bc = bOnAxisExact(state.I);
+  const Bi = bIdeal(state.I);
+  document.getElementById('hudTop').textContent =
+    `I = ${state.I >= 0 ? '+' : ''}${state.I.toFixed(2)} А    ` +
+    `R = ${(state.R * 1000).toFixed(1)} мм    ` +
+    `L = ${(state.L * 1000).toFixed(1)} мм    ` +
+    `N = ${state.N}    ` +
+    `линий = ${state.fieldLines.length}`;
+  document.getElementById('hudBot').textContent =
+    `|B|(0,0) = ${(Bc * 1e3 >= 0 ? '+' : '')}${(Bc * 1e3).toPrecision(4)} мТл    ` +
+    `B_ид = µ₀nI = ${(Bi * 1e3 >= 0 ? '+' : '')}${(Bi * 1e3).toPrecision(4)} мТл    ` +
+    `частиц = ${np}`;
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ---------- controls ----------
+const $ = (id) => document.getElementById(id);
+const ctlI = $('ctlI');
+const lblI = $('lblI');
+function syncILabel() {
+  const v = ctlI.value / 100;
+  const prevSign = state.I > 1e-6 ? 1 : (state.I < -1e-6 ? -1 : 0);
+  state.I = v;
+  lblI.textContent = (v >= 0 ? '+' : '') + v.toFixed(2) + ' А';
+  const newSign = v > 1e-6 ? 1 : (v < -1e-6 ? -1 : 0);
+  if (newSign !== prevSign) {
+    buildPoles();
+    buildArrows();
+  }
+}
+ctlI.addEventListener('input', syncILabel);
+syncILabel();
+
+// debounce heavy rebuilds (field-line tracing)
+let rebuildTimer = 0;
+function scheduleRebuild() {
+  clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(rebuildAll, 50);
+}
+
+$('ctlR').addEventListener('input', e => {
+  const v = Math.max(1, +e.target.value || 0);
+  state.R = v * 1e-3; scheduleRebuild();
+});
+$('ctlL').addEventListener('input', e => {
+  const v = Math.max(0.5, +e.target.value || 0);
+  state.L = v * 1e-3; scheduleRebuild();
+});
+$('ctlN').addEventListener('input', e => {
+  const v = Math.max(1, Math.round(+e.target.value || 1));
+  state.N = v;
+  buildWire();
+  scheduleRebuild(); // N changes B-field shape too
+});
+$('ctlSeeds').addEventListener('input', e => {
+  const v = Math.max(3, Math.min(14, Math.round(+e.target.value || 8)));
+  state.nSeeds = v; scheduleRebuild();
+});
+$('ctlPhi').addEventListener('input', e => {
+  const v = Math.max(3, Math.min(48, Math.round(+e.target.value || 12)));
+  state.nPhi = v; buildFieldLineMeshes(); buildArrows();
+});
+
+$('btnOff').addEventListener('click', () => { ctlI.value = 0; syncILabel(); });
+$('btnRev').addEventListener('click', () => { ctlI.value = -ctlI.value; syncILabel(); });
+$('btnMaxP').addEventListener('click', () => { ctlI.value = 2000; syncILabel(); });
+$('btnMaxN').addEventListener('click', () => { ctlI.value = -2000; syncILabel(); });
+
+$('chkAuto').addEventListener('change', e => { state.autoRotate = e.target.checked; });
+$('chkLines').addEventListener('change', e => { state.showLines = e.target.checked; });
+</script>
+</body>
+</html>
