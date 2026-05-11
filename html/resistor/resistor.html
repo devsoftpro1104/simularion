@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Работа резистора — 3D (закон Ома, ток, рассеяние, нагрев)</title>
+<style>
+  :root {
+    --bg-0: #0d1117;
+    --bg-1: #161b22;
+    --bg-2: #21262d;
+    --line: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+    --plus: #ff6464;
+    --minus: #6ea8ff;
+    --hot:  #ff8c3a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 290px 1fr;
+    gap: 10px;
+    height: 100vh;
+    padding: 10px;
+  }
+  .panel {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .group { margin-bottom: 16px; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .row label {
+    flex: 0 0 90px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+  .row input[type="range"] { flex: 1; }
+  .row input[type="number"] { flex: 0 0 80px; }
+  .row select { flex: 1; }
+  .row .val {
+    flex: 0 0 70px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  input[type="number"], select {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  input[type="number"]:focus, select:focus { border-color: var(--accent); }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 18px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    margin-top: -6px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { background: #79b8ff; }
+  input[type="range"]::-moz-range-track {
+    height: 6px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .checkrow {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px; color: var(--text-dim);
+  }
+  .checkrow input { accent-color: var(--accent); }
+  button {
+    background: var(--bg-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  button:hover { background: #30363d; border-color: var(--text-dim); }
+  button:active { background: var(--accent-2); }
+  .help { color: var(--text-dim); line-height: 1.5; }
+  .help b { color: var(--text); }
+  .help .pos { color: var(--plus); font-weight: 600; }
+  .help .neg { color: var(--minus); font-weight: 600; }
+  .help .hot { color: var(--hot); font-weight: 600; }
+  #stage {
+    position: relative;
+    background: #05080d;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+  .hud {
+    position: absolute;
+    pointer-events: none;
+    color: var(--text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 4px #000;
+  }
+  .hud-top { top: 12px; left: 14px; }
+  .hud-bot { bottom: 10px; left: 14px; color: var(--text-dim); }
+  .hud-tip {
+    top: 12px; right: 14px;
+    color: var(--text-dim); text-align: right;
+  }
+  .legend {
+    position: absolute;
+    bottom: 10px; right: 14px;
+    color: var(--text-dim); text-align: right; font-size: 11px;
+    line-height: 1.6;
+  }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  .badge {
+    display: inline-block;
+    background: rgba(88, 166, 255, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    margin-left: 6px;
+  }
+  .bands {
+    display: flex; gap: 4px;
+    margin-top: 4px;
+    padding: 6px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .bands .b {
+    flex: 1; height: 18px;
+    border-radius: 2px;
+    border: 1px solid #00000060;
+  }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="panel">
+    <div class="group">
+      <h2>Параметры <span class="badge">I = U / R</span></h2>
+      <div class="row">
+        <label>Напряж. U:</label>
+        <input id="ctlU" type="range" min="-1500" max="1500" value="500" step="1">
+        <span class="val" id="lblU">+5.00 В</span>
+      </div>
+      <div class="row">
+        <label>Сопрот. R:</label>
+        <input id="ctlR" type="range" min="0" max="1000" value="400" step="1">
+        <span class="val" id="lblR">1.00 кΩ</span>
+      </div>
+      <div class="row">
+        <label>Из бандов:</label>
+        <select id="ctlPreset">
+          <option value="">— своё значение —</option>
+          <option value="100">100 Ω (кор-чёр-кор)</option>
+          <option value="220">220 Ω (кр-кр-кор)</option>
+          <option value="470">470 Ω (жёл-фио-кор)</option>
+          <option value="1000" selected>1 кΩ (кор-чёр-кр)</option>
+          <option value="2200">2.2 кΩ (кр-кр-кр)</option>
+          <option value="4700">4.7 кΩ (жёл-фио-кр)</option>
+          <option value="10000">10 кΩ (кор-чёр-ор)</option>
+          <option value="22000">22 кΩ (кр-кр-ор)</option>
+          <option value="47000">47 кΩ (жёл-фио-ор)</option>
+          <option value="100000">100 кΩ (кор-чёр-жёл)</option>
+          <option value="220000">220 кΩ (кр-кр-жёл)</option>
+          <option value="1000000">1 МΩ (кор-чёр-зел)</option>
+        </select>
+      </div>
+      <div class="bands" id="bands">
+        <div class="b" id="b1"></div>
+        <div class="b" id="b2"></div>
+        <div class="b" id="b3"></div>
+        <div class="b" id="b4"></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <button id="btnRev">Реверс полярности ⇄</button>
+      <button id="btnZero">Сбросить U → 0</button>
+      <div class="checkrow">
+        <input id="chkAuto" type="checkbox">
+        <label for="chkAuto">авто-вращение</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkHeat" type="checkbox" checked>
+        <label for="chkHeat">показывать нагрев</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkInner" type="checkbox" checked>
+        <label for="chkInner">рассеяние внутри</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkElectrons" type="checkbox" checked>
+        <label for="chkElectrons">показывать электроны</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Как считается</h2>
+      <div class="help">
+        Закон Ома: <b>I = U / R</b>.<br>
+        Мощность рассеяния: <b>P = U·I = U²/R = I²·R</b>.<br><br>
+        В проводах электроны движутся свободно, а в резистивном
+        слое сталкиваются с атомами решётки — кинетическая энергия
+        переходит в <span class="hot">тепло</span>. Чем больше
+        ток, тем интенсивнее нагрев — корпус <span class="hot">светится</span>
+        от тёмно-красного до ярко-жёлтого.<br><br>
+        Цветные кольца кодируют номинал: 1-я и 2-я полоса — цифры,
+        3-я — множитель (×10ⁿ), 4-я — допуск (зол. ±5%).<br><br>
+        <span class="pos">+ клемма</span> слева,
+        <span class="neg">− клемма</span> справа (при U&gt;0).
+        Электроны идут от − к +, ток <b>I</b> — в обратную сторону.<br><br>
+        <b>ЛКМ</b> — поворот, <b>колесо</b> — зум, <b>ПКМ</b> — панорама.
+      </div>
+    </div>
+  </aside>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div class="hud hud-top" id="hudTop"></div>
+    <div class="hud hud-tip">ЛКМ — поворот · колесо — зум · ПКМ — панорама</div>
+    <div class="hud hud-bot" id="hudBot"></div>
+    <div class="legend">
+      <div><span class="sw" style="background:#d4b48a"></span>корпус резистора</div>
+      <div><span class="sw" style="background:#ff8c3a"></span>тепло (P = I²R)</div>
+      <div><span class="sw" style="background:#9ed5ff"></span>электроны</div>
+      <div><span class="sw" style="background:#c9a86a"></span>выводы / провод</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+"use strict";
+
+// ---------- state ----------
+const state = {
+  U: 5.0,            // напряжение, В
+  R: 1000,           // сопротивление, Ом
+  autoRotate: false,
+  showHeat: true,
+  showInner: true,
+  showElectrons: true,
+  lastT: performance.now() / 1000,
+};
+
+// ---------- физика ----------
+function current()    { return state.U / state.R; }       // А
+function powerDiss()  { return state.U * state.U / state.R; } // Вт
+
+// ---------- color codes ----------
+// 0..9 — цифры/множитель
+const BAND_COLORS = [
+  { hex: 0x111111, css: '#111111' }, // 0 black
+  { hex: 0x6b4a2a, css: '#6b4a2a' }, // 1 brown
+  { hex: 0xd03030, css: '#d03030' }, // 2 red
+  { hex: 0xe07a30, css: '#e07a30' }, // 3 orange
+  { hex: 0xebd23a, css: '#ebd23a' }, // 4 yellow
+  { hex: 0x3aa84a, css: '#3aa84a' }, // 5 green
+  { hex: 0x3a6fcc, css: '#3a6fcc' }, // 6 blue
+  { hex: 0x8a4ad4, css: '#8a4ad4' }, // 7 violet
+  { hex: 0x888888, css: '#888888' }, // 8 gray
+  { hex: 0xeeeeee, css: '#eeeeee' }, // 9 white
+];
+const TOL_GOLD = { hex: 0xd4a13a, css: '#d4a13a' };
+
+function rValueToBands(R) {
+  // Возвращает [digit1, digit2, multiplier]
+  if (R <= 0) return [0, 0, 0];
+  // Нормируем R = AB × 10^M, где A — старшая цифра, B — вторая
+  const lg = Math.log10(R);
+  let mult = Math.floor(lg) - 1;
+  if (mult < 0) mult = 0;
+  let mantissa = R / Math.pow(10, mult);
+  // mantissa должен быть в [10, 100), но при R<100 он будет в [1, 10) — тогда mult=0 и AB = R*10
+  if (mantissa < 10) { mantissa *= 10; mult -= 1; }
+  if (mantissa >= 100) { mantissa /= 10; mult += 1; }
+  mantissa = Math.round(mantissa);
+  if (mantissa >= 100) { mantissa = 99; }
+  const d1 = Math.floor(mantissa / 10);
+  const d2 = mantissa % 10;
+  if (mult < 0) mult = 0;
+  if (mult > 9) mult = 9;
+  return [d1, d2, mult];
+}
+
+function rFormat(R) {
+  if (R >= 1e6) return (R / 1e6).toPrecision(3) + ' МΩ';
+  if (R >= 1e3) return (R / 1e3).toPrecision(3) + ' кΩ';
+  return R.toPrecision(3) + ' Ω';
+}
+function iFormat(I) {
+  const a = Math.abs(I);
+  if (a >= 1)   return (I).toPrecision(3) + ' А';
+  if (a >= 1e-3) return (I * 1e3).toPrecision(3) + ' мА';
+  if (a >= 1e-6) return (I * 1e6).toPrecision(3) + ' мкА';
+  return (I * 1e9).toPrecision(3) + ' нА';
+}
+function pFormat(P) {
+  const a = Math.abs(P);
+  if (a >= 1)   return P.toPrecision(3) + ' Вт';
+  if (a >= 1e-3) return (P * 1e3).toPrecision(3) + ' мВт';
+  if (a >= 1e-6) return (P * 1e6).toPrecision(3) + ' мкВт';
+  return (P * 1e9).toPrecision(3) + ' нВт';
+}
+
+// ---------- three.js ----------
+const stage  = document.getElementById('stage');
+const canvas = document.getElementById('canvas');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setClearColor(0x05080d, 1);
+
+const scene = new THREE.Scene();
+
+// градиентный фон
+{
+  const bgGeom = new THREE.SphereGeometry(5, 32, 16);
+  const bgMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {},
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vPos;
+      void main() {
+        float h = normalize(vPos).y * 0.5 + 0.5;
+        vec3 top = vec3(0.075, 0.097, 0.137);
+        vec3 bot = vec3(0.030, 0.046, 0.070);
+        gl_FragColor = vec4(mix(bot, top, h), 1.0);
+      }`,
+  });
+  scene.add(new THREE.Mesh(bgGeom, bgMat));
+}
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
+camera.position.set(0.04, 0.05, 0.13);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 0, 0);
+controls.minDistance = 0.02;
+controls.maxDistance = 1.0;
+
+// освещение
+scene.add(new THREE.AmbientLight(0x6688aa, 0.55));
+{
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.75);
+  d1.position.set(0.5, 0.8, 0.6);
+  scene.add(d1);
+  const d2 = new THREE.DirectionalLight(0x88aaff, 0.30);
+  d2.position.set(-0.7, -0.3, -0.5);
+  scene.add(d2);
+}
+// тёплый свет, симулирующий «нагрев» резистора (управляем интенсивностью)
+const heatLight = new THREE.PointLight(0xff7820, 0.0, 0.20, 1.6);
+heatLight.position.set(0, 0, 0);
+scene.add(heatLight);
+
+// ---------- геометрические константы ----------
+// Все размеры в метрах. Резистор оси X, корпус в центре.
+const BODY_LEN = 0.016;   // 16 мм длина корпуса
+const BODY_R   = 0.0028;  // 2.8 мм радиус корпуса
+const LEAD_R   = 0.00040; // 0.4 мм радиус ножки
+const LEAD_LEN = 0.025;   // 25 мм длина ножки слева/справа
+const BAND_W   = 0.0015;  // ширина цветной полосы
+const BUS_Y    = -0.030;  // высота шины (батарея)
+const FRONT_Z  = 0.0;     // на оси
+const TERM_X   = BODY_LEN / 2 + LEAD_LEN; // конец ножки
+
+// ---------- группы сцены ----------
+const bodyGroup     = new THREE.Group(); // корпус + полосы
+const leadsGroup    = new THREE.Group(); // ножки резистора
+const wiresGroup    = new THREE.Group(); // провода схемы + батарея
+const innerGroup    = new THREE.Group(); // внутренний резистивный слой + атомы решётки
+scene.add(bodyGroup, leadsGroup, wiresGroup, innerGroup);
+
+// ---------- материалы ----------
+const bodyMat = new THREE.MeshStandardMaterial({
+  color: 0xd4b48a, metalness: 0.05, roughness: 0.7, emissive: 0x000000,
+});
+const leadMat = new THREE.MeshStandardMaterial({
+  color: 0xc9a86a, metalness: 0.75, roughness: 0.35,
+});
+const wireMat = new THREE.MeshStandardMaterial({
+  color: 0xc9a86a, metalness: 0.6, roughness: 0.4,
+});
+const batteryBodyMat = new THREE.MeshStandardMaterial({
+  color: 0x2a2f38, metalness: 0.3, roughness: 0.7,
+});
+const batteryPosMat = new THREE.MeshStandardMaterial({
+  color: 0xd13a3a, metalness: 0.3, roughness: 0.55, emissive: 0x200505,
+});
+const batteryNegMat = new THREE.MeshStandardMaterial({
+  color: 0x3a6fcc, metalness: 0.3, roughness: 0.55, emissive: 0x050d20,
+});
+
+// ---------- корпус с полосами ----------
+const bandMaterials = []; // ссылки на материалы полос — динамически обновляем
+
+function buildResistor() {
+  bodyGroup.clear();
+  leadsGroup.clear();
+  bandMaterials.length = 0;
+
+  // корпус (цилиндр со слегка скруглёнными торцами через два конуса)
+  const bodyGeom = new THREE.CylinderGeometry(BODY_R, BODY_R, BODY_LEN, 28, 1, false);
+  bodyGeom.rotateZ(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeom, bodyMat);
+  bodyGroup.add(body);
+
+  // скруглённые «шапочки» на торцах
+  const capGeom = new THREE.SphereGeometry(BODY_R, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2);
+  capGeom.rotateZ(-Math.PI / 2);
+  const capL = new THREE.Mesh(capGeom, bodyMat);
+  capL.position.x = -BODY_LEN / 2;
+  capL.rotation.y = Math.PI;
+  bodyGroup.add(capL);
+  const capR = new THREE.Mesh(capGeom, bodyMat);
+  capR.position.x = BODY_LEN / 2;
+  bodyGroup.add(capR);
+
+  // цветные полосы — 4 шт
+  // Раскладка вдоль длины: оставляем 30% слева под "начало",
+  // полосы 1..3 ближе к левому краю, 4-я (допуск) — отдельно справа.
+  const [d1, d2, mult] = rValueToBands(state.R);
+  const cols = [
+    BAND_COLORS[d1],
+    BAND_COLORS[d2],
+    BAND_COLORS[mult],
+    TOL_GOLD,
+  ];
+  const bandXs = [
+    -BODY_LEN * 0.30,
+    -BODY_LEN * 0.15,
+    0.0,
+    +BODY_LEN * 0.34,
+  ];
+
+  // обновим HTML-индикатор бандов
+  const elBands = ['b1', 'b2', 'b3', 'b4'];
+  for (let i = 0; i < 4; i++) {
+    document.getElementById(elBands[i]).style.background = cols[i].css;
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const bMat = new THREE.MeshStandardMaterial({
+      color: cols[i].hex,
+      metalness: i === 3 ? 0.7 : 0.2,
+      roughness: i === 3 ? 0.35 : 0.55,
+      emissive: 0x000000,
+    });
+    bandMaterials.push(bMat);
+    const bGeom = new THREE.CylinderGeometry(
+      BODY_R * 1.013, BODY_R * 1.013, BAND_W, 28, 1, false,
+    );
+    bGeom.rotateZ(Math.PI / 2);
+    const ring = new THREE.Mesh(bGeom, bMat);
+    ring.position.x = bandXs[i];
+    bodyGroup.add(ring);
+  }
+
+  // ножки (выводы) — цилиндры по оси X
+  const leadGeom = new THREE.CylinderGeometry(LEAD_R, LEAD_R, LEAD_LEN, 14);
+  leadGeom.rotateZ(Math.PI / 2);
+
+  const leadL = new THREE.Mesh(leadGeom, leadMat);
+  leadL.position.x = -BODY_LEN / 2 - LEAD_LEN / 2;
+  leadsGroup.add(leadL);
+  const leadR = new THREE.Mesh(leadGeom, leadMat);
+  leadR.position.x = BODY_LEN / 2 + LEAD_LEN / 2;
+  leadsGroup.add(leadR);
+}
+
+// ---------- внутренний слой (атомы решётки) ----------
+let latticePoints = null; // THREE.Points
+let latticeMat = null;
+
+function buildInner() {
+  innerGroup.clear();
+
+  // лёгкий «стержень» внутри (резистивный слой) — слабо просвечивающий
+  const coreGeom = new THREE.CylinderGeometry(
+    BODY_R * 0.55, BODY_R * 0.55, BODY_LEN * 0.93, 16, 1, false,
+  );
+  coreGeom.rotateZ(Math.PI / 2);
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x402418,
+    metalness: 0.1, roughness: 0.8,
+    emissive: 0x000000,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  });
+  const core = new THREE.Mesh(coreGeom, coreMat);
+  innerGroup.add(core);
+  core.userData.isCore = true;
+
+  // атомы решётки — мелкие точки внутри стержня
+  const N = 220;
+  const positions = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    // равномерно по цилиндру
+    const x = (Math.random() - 0.5) * BODY_LEN * 0.92;
+    const r = Math.sqrt(Math.random()) * BODY_R * 0.50;
+    const a = Math.random() * Math.PI * 2;
+    positions[i * 3]     = x;
+    positions[i * 3 + 1] = r * Math.cos(a);
+    positions[i * 3 + 2] = r * Math.sin(a);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  latticeMat = new THREE.PointsMaterial({
+    color: 0xffb070,
+    size: 0.0008,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  });
+  latticePoints = new THREE.Points(g, latticeMat);
+  innerGroup.add(latticePoints);
+}
+
+// ---------- провода / батарея / схема ----------
+function buildCircuit() {
+  wiresGroup.clear();
+
+  // нижняя шина и батарея — как в capacitor.html
+  const wireR = 0.00050;
+
+  const makeTube = (pts, mat) => {
+    const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
+    const g = new THREE.TubeGeometry(curve, Math.max(8, pts.length * 8), wireR, 10, false);
+    wiresGroup.add(new THREE.Mesh(g, mat));
+  };
+
+  // от правого конца резистора → вниз → налево к батарее
+  makeTube([
+    [ TERM_X, 0,        0],
+    [ TERM_X, -0.012,   0],
+    [ TERM_X, BUS_Y,    0],
+    [ 0.012,  BUS_Y,    0],
+  ], wireMat);
+
+  // от левого конца резистора → вниз → направо к батарее
+  makeTube([
+    [-TERM_X, 0,        0],
+    [-TERM_X, -0.012,   0],
+    [-TERM_X, BUS_Y,    0],
+    [-0.012,  BUS_Y,    0],
+  ], wireMat);
+
+  // батарея в центре нижней шины
+  const battR = 0.0035;
+  // знак U задаёт, какая клемма "вверху по контуру"
+  const leftIsPos = state.U >= 0; // при +U: левый край схемы (с резистора) — +
+  // короткая клемма (−)
+  const negPlate = new THREE.Mesh(
+    new THREE.CylinderGeometry(battR * 0.95, battR * 0.95, 0.0014, 24),
+    batteryNegMat,
+  );
+  negPlate.rotation.z = Math.PI / 2;
+  negPlate.position.set(leftIsPos ?  0.0030 : -0.0030, BUS_Y, 0);
+  wiresGroup.add(negPlate);
+
+  // длинная клемма (+)
+  const posPlate = new THREE.Mesh(
+    new THREE.CylinderGeometry(battR * 1.05, battR * 1.05, 0.0028, 24),
+    batteryPosMat,
+  );
+  posPlate.rotation.z = Math.PI / 2;
+  posPlate.position.set(leftIsPos ? -0.0050 : 0.0050, BUS_Y, 0);
+  wiresGroup.add(posPlate);
+
+  // корпус-перемычка
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(battR * 0.4, battR * 0.4, 0.0016, 16),
+    batteryBodyMat,
+  );
+  body.rotation.z = Math.PI / 2;
+  body.position.set(0, BUS_Y, 0);
+  wiresGroup.add(body);
+
+  // подписи + / −
+  const makeLabel = (text, color, pos) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = color;
+    g.font = 'bold 60px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 32, 36);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(c),
+      transparent: true,
+      depthTest: false,
+    }));
+    sp.position.copy(pos);
+    const s = battR * 1.7;
+    sp.scale.set(s, s, 1);
+    return sp;
+  };
+  wiresGroup.add(makeLabel('+', '#ffe0e0',
+    new THREE.Vector3(leftIsPos ? -0.0070 : 0.0070, BUS_Y + 0.005, 0)));
+  wiresGroup.add(makeLabel('−', '#e0eaff',
+    new THREE.Vector3(leftIsPos ?  0.0050 : -0.0050, BUS_Y + 0.005, 0)));
+}
+
+// ---------- маршрут электронов ----------
+// Контур по часовой стрелке (при U>0 электроны идут в одном направлении).
+// Параметр t∈[0,1]: 0..tA — левая ножка+вывод, tA..tB — внутри корпуса, tB..1 — правая ножка+провода+батарея+обратно.
+// Сегменты:
+// 0: левый конец ножки (TERM_X = TERM_X слева, x = -TERM_X)
+// 1: левый край корпуса (x = -BODY_LEN/2)
+// 2: правый край корпуса (x = +BODY_LEN/2)  <-- участок внутри резистора
+// 3: правый конец ножки (x = TERM_X)
+// 4: правый "вниз" (TERM_X, -0.012, 0)
+// 5: правый угол шины (TERM_X, BUS_Y, 0)
+// 6: правый возле батареи (0.012, BUS_Y, 0)
+// 7: левый возле батареи (-0.012, BUS_Y, 0)
+// 8: левый угол шины (-TERM_X, BUS_Y, 0)
+// 9: левый "вверх" (-TERM_X, -0.012, 0)
+// 10: обратно к левой ножке = старт.
+let circuitPath = [];
+let circuitLens = [];
+let circuitTotal = 0;
+let resistorSegStart = 0; // t-значение начала "медленной" зоны
+let resistorSegEnd   = 0;
+
+function rebuildCircuitPath() {
+  const pts = [
+    new THREE.Vector3(-TERM_X,     0,      0),                  // 0
+    new THREE.Vector3(-BODY_LEN/2, 0,      0),                  // 1
+    new THREE.Vector3( BODY_LEN/2, 0,      0),                  // 2  (внутри корпуса)
+    new THREE.Vector3( TERM_X,     0,      0),                  // 3
+    new THREE.Vector3( TERM_X,    -0.012,  0),                  // 4
+    new THREE.Vector3( TERM_X,    BUS_Y,   0),                  // 5
+    new THREE.Vector3( 0.012,     BUS_Y,   0),                  // 6
+    new THREE.Vector3(-0.012,     BUS_Y,   0),                  // 7
+    new THREE.Vector3(-TERM_X,    BUS_Y,   0),                  // 8
+    new THREE.Vector3(-TERM_X,   -0.012,   0),                  // 9
+  ];
+  circuitPath = pts;
+  circuitLens = [0];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    total += pts[i].distanceTo(pts[i - 1]);
+    circuitLens.push(total);
+  }
+  // замыкающий сегмент 9 -> 0
+  total += pts[0].distanceTo(pts[pts.length - 1]);
+  circuitLens.push(total);
+  circuitTotal = total;
+
+  // границы "внутри резистора" (между точкой 1 и 2)
+  resistorSegStart = circuitLens[1] / circuitTotal;
+  resistorSegEnd   = circuitLens[2] / circuitTotal;
+}
+
+function samplePath(s) {
+  if (!circuitTotal) return new THREE.Vector3();
+  const target = s * circuitTotal;
+  // двоичный поиск по 0..circuitLens.length-1
+  let lo = 0, hi = circuitLens.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (circuitLens[mid] <= target) lo = mid; else hi = mid;
+  }
+  const segLen = circuitLens[hi] - circuitLens[lo];
+  const frac = segLen > 1e-12 ? (target - circuitLens[lo]) / segLen : 0;
+  // индексы точек
+  const aIdx = lo % circuitPath.length;
+  const bIdx = hi % circuitPath.length;
+  const a = circuitPath[aIdx];
+  const b = circuitPath[bIdx];
+  return new THREE.Vector3(
+    a.x + (b.x - a.x) * frac,
+    a.y + (b.y - a.y) * frac,
+    a.z + (b.z - a.z) * frac,
+  );
+}
+
+// ---------- электроны (Points) ----------
+const MAX_E = 1200;
+const eGeom = new THREE.BufferGeometry();
+const ePositions = new Float32Array(MAX_E * 3);
+const eColors    = new Float32Array(MAX_E * 3);
+const eSizes     = new Float32Array(MAX_E);
+eGeom.setAttribute('position', new THREE.BufferAttribute(ePositions, 3));
+eGeom.setAttribute('color',    new THREE.BufferAttribute(eColors, 3));
+eGeom.setAttribute('size',     new THREE.BufferAttribute(eSizes, 1));
+
+function makeParticleTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0.00, 'rgba(255,255,250,1.0)');
+  grad.addColorStop(0.22, 'rgba(220,235,255,0.85)');
+  grad.addColorStop(0.55, 'rgba(120,170,230,0.35)');
+  grad.addColorStop(1.00, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const eMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uMap: { value: makeParticleTexture() },
+    uPxPerUnit: { value: 1.0 },
+  },
+  vertexShader: `
+    attribute float size;
+    varying vec3 vColor;
+    uniform float uPxPerUnit;
+    void main() {
+      vColor = color;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = size * uPxPerUnit / -mv.z;
+    }`,
+  fragmentShader: `
+    uniform sampler2D uMap;
+    varying vec3 vColor;
+    void main() {
+      vec4 t = texture2D(uMap, gl_PointCoord);
+      gl_FragColor = vec4(vColor, 1.0) * t;
+    }`,
+  vertexColors: true,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const ePoints = new THREE.Points(eGeom, eMat);
+ePoints.frustumCulled = false;
+scene.add(ePoints);
+
+// массив электронов: каждый имеет t∈[0,1], скоростной коэффициент,
+// небольшой случайный «дрейф» по поперечнику внутри резистора (рассеяние).
+const electrons = []; // {t, age, maxLife, jitterY, jitterZ, hop}
+
+// ---------- частицы тепла (вверх над корпусом) ----------
+const MAX_H = 400;
+const hGeom = new THREE.BufferGeometry();
+const hPositions = new Float32Array(MAX_H * 3);
+const hColors    = new Float32Array(MAX_H * 3);
+const hSizes     = new Float32Array(MAX_H);
+hGeom.setAttribute('position', new THREE.BufferAttribute(hPositions, 3));
+hGeom.setAttribute('color',    new THREE.BufferAttribute(hColors, 3));
+hGeom.setAttribute('size',     new THREE.BufferAttribute(hSizes, 1));
+const hMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uMap: { value: makeParticleTexture() },
+    uPxPerUnit: { value: 1.0 },
+  },
+  vertexShader: eMat.vertexShader,
+  fragmentShader: eMat.fragmentShader,
+  vertexColors: true,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const hPoints = new THREE.Points(hGeom, hMat);
+hPoints.frustumCulled = false;
+scene.add(hPoints);
+const heatParts = []; // {x, y, z, vy, age, maxLife}
+
+// ---------- assembly ----------
+function rebuildAll() {
+  buildResistor();
+  buildInner();
+  buildCircuit();
+  rebuildCircuitPath();
+}
+rebuildAll();
+
+// ---------- resize ----------
+function resize() {
+  const rect = stage.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  const px = h * 0.5 / Math.tan(camera.fov * 0.5 * Math.PI / 180);
+  eMat.uniforms.uPxPerUnit.value = px;
+  hMat.uniforms.uPxPerUnit.value = px;
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+// ---------- температура (для нагрева корпуса) ----------
+let tempK = 0; // 0..1 — насыщение по мощности
+
+// ---------- анимация ----------
+let spawnAcc = 0;
+let heatSpawnAcc = 0;
+
+function tick(now) {
+  const tNow = now / 1000;
+  const dt = Math.max(1e-6, Math.min(0.1, tNow - state.lastT));
+  state.lastT = tNow;
+
+  const U = state.U;
+  const R = state.R;
+  const I = current();
+  const P = powerDiss();
+  const Iabs = Math.abs(I);
+
+  // нормировка для визуализации:
+  // - скорость электронов ~ I (ограничиваем при больших токах)
+  // - тепло ~ P (логарифмически)
+  const Inorm = Math.min(1.0, Math.log10(1 + Iabs * 1e3) / 3.0); // 0..1
+  const Pnorm = Math.min(1.0, Math.log10(1 + P * 1e3) / 4.0);     // 0..1
+  // знак направления электронов: они движутся ПРОТИВ направления тока I.
+  // При U>0: + слева, − справа → ток внутри резистора идёт слева→направо,
+  // а электроны — справа→налево (значит t убывает по нашему контуру).
+  const sign = U > 0 ? -1 : (U < 0 ? 1 : 0);
+
+  // плавно «нагреваем»/«остываем»
+  const tauT = 0.6; // секунд
+  const tempTarget = Pnorm;
+  tempK += (tempTarget - tempK) * (1 - Math.exp(-dt / tauT));
+  if (tempK < 0) tempK = 0;
+  if (tempK > 1) tempK = 1;
+
+  // ---------- обновление электронов ----------
+  // базовая скорость по контуру при максимальном токе (оборот за 1.0 c)
+  const baseSpeed = 1.0;
+  const v = baseSpeed * Inorm;
+
+  for (let i = electrons.length - 1; i >= 0; i--) {
+    const p = electrons[i];
+    // внутри резистивного участка движение замедлено и с дрожанием
+    const inResistor =
+      (p.t >= resistorSegStart && p.t <= resistorSegEnd);
+    const slow = inResistor ? 0.35 : 1.0;
+    p.t += v * dt * sign * slow;
+    // зацикливание
+    p.t = ((p.t % 1) + 1) % 1;
+    p.age += dt;
+
+    // случайные "столкновения" внутри резистора — обновляем jitter
+    if (inResistor) {
+      p.hop -= dt;
+      if (p.hop <= 0) {
+        p.jitterY = (Math.random() - 0.5) * BODY_R * 0.6;
+        p.jitterZ = (Math.random() - 0.5) * BODY_R * 0.6;
+        p.hop = 0.04 + Math.random() * 0.07; // следующая «коллизия»
+      }
+    } else {
+      p.jitterY *= 0.85;
+      p.jitterZ *= 0.85;
+    }
+
+    if (p.age > p.maxLife) {
+      electrons[i] = electrons[electrons.length - 1];
+      electrons.pop();
+    }
+  }
+  // спавн новых электронов пропорционально току
+  if (Inorm > 0.001 && sign !== 0 && state.showElectrons) {
+    spawnAcc += 400 * Inorm * dt;
+    let nSpawn = spawnAcc | 0;
+    if (nSpawn > 18) nSpawn = 18;
+    spawnAcc -= nSpawn;
+    while (nSpawn-- > 0) {
+      electrons.push({
+        t: Math.random(),
+        age: 0,
+        maxLife: 1.0 + Math.random() * 1.8,
+        jitterY: 0,
+        jitterZ: 0,
+        hop: 0.04 + Math.random() * 0.07,
+      });
+    }
+  }
+  if (electrons.length > MAX_E) electrons.splice(0, electrons.length - MAX_E);
+
+  // запись буфера электронов
+  const ne = electrons.length;
+  for (let i = 0; i < ne; i++) {
+    const p = electrons[i];
+    const pos = samplePath(p.t);
+    pos.y += p.jitterY;
+    pos.z += p.jitterZ;
+    const lifeFrac = Math.max(0, 1 - p.age / p.maxLife);
+    const fadeIn = Math.min(1, p.age / 0.15);
+    const a01 = lifeFrac * fadeIn;
+    const j = i * 3;
+    ePositions[j]     = pos.x;
+    ePositions[j + 1] = pos.y;
+    ePositions[j + 2] = pos.z;
+    // при движении внутри резистора цвет немного теплее (имитация трения)
+    const inResistor = (p.t >= resistorSegStart && p.t <= resistorSegEnd);
+    if (inResistor) {
+      eColors[j]     = (0.70 + 0.30 * tempK) * a01;
+      eColors[j + 1] = (0.80 - 0.20 * tempK) * a01;
+      eColors[j + 2] = (1.00 - 0.60 * tempK) * a01;
+    } else {
+      eColors[j]     = 0.55 * a01;
+      eColors[j + 1] = 0.78 * a01;
+      eColors[j + 2] = 1.00 * a01;
+    }
+    eSizes[i] = 0.0016 + 0.0008 * Inorm;
+  }
+  eGeom.setDrawRange(0, ne);
+  eGeom.attributes.position.needsUpdate = true;
+  eGeom.attributes.color.needsUpdate    = true;
+  eGeom.attributes.size.needsUpdate     = true;
+
+  // ---------- нагрев корпуса ----------
+  // тон: 0 — холодно (исходный цвет), 1 — раскалённый (ярко-жёлтый/белый)
+  // классическое чёрное тело: тёмно-красный → красный → оранжевый → жёлтый → белый
+  function heatColor(k) {
+    // k в [0,1]
+    if (k <= 0) return new THREE.Color(0, 0, 0);
+    const r = Math.min(1, k * 2.0);
+    const g = Math.min(1, Math.max(0, (k - 0.35) * 2.2));
+    const b = Math.min(1, Math.max(0, (k - 0.75) * 4.0));
+    return new THREE.Color(r, g, b);
+  }
+  const showHeat = state.showHeat;
+  const kVis = showHeat ? tempK : 0;
+  const hc = heatColor(kVis);
+  // эмиссия корпуса и полос
+  bodyMat.emissive.setRGB(hc.r * 0.9, hc.g * 0.65, hc.b * 0.55);
+  // корпус слегка краснеет — модифицируем base color чуть-чуть
+  const baseR = 0.83, baseG = 0.71, baseB = 0.54;
+  bodyMat.color.setRGB(
+    baseR + (1.0 - baseR) * kVis * 0.4,
+    baseG + (1.0 - baseG) * kVis * 0.2,
+    baseB * (1.0 - kVis * 0.5),
+  );
+  // полосы — тоже подсвечиваем, но слабее, чтобы не потерять цвет
+  for (const m of bandMaterials) {
+    m.emissive.setRGB(hc.r * 0.45, hc.g * 0.30, hc.b * 0.25);
+  }
+  // внутренняя точка света
+  heatLight.intensity = kVis * 0.018;
+  heatLight.color.copy(hc);
+
+  // решётка внутри: при нагреве «трясётся» сильнее (визуально — увеличиваем размер/яркость)
+  if (latticeMat) {
+    latticeMat.opacity = state.showInner ? (0.45 + 0.45 * kVis) : 0.0;
+    latticeMat.size    = 0.0007 + 0.0010 * kVis;
+    latticeMat.color.setRGB(
+      1.0, 0.70 + 0.20 * kVis, 0.40 + 0.30 * kVis,
+    );
+  }
+  // показ внутреннего слоя
+  innerGroup.visible = state.showInner;
+
+  // ---------- частицы тепла над корпусом ----------
+  if (showHeat && kVis > 0.02) {
+    heatSpawnAcc += 90 * kVis * dt;
+    let nh = heatSpawnAcc | 0;
+    if (nh > 8) nh = 8;
+    heatSpawnAcc -= nh;
+    while (nh-- > 0) {
+      heatParts.push({
+        x: (Math.random() - 0.5) * BODY_LEN * 0.8,
+        y: BODY_R * 0.9,
+        z: (Math.random() - 0.5) * BODY_R * 1.1,
+        vy: 0.005 + Math.random() * 0.012,
+        vx: (Math.random() - 0.5) * 0.004,
+        vz: (Math.random() - 0.5) * 0.004,
+        age: 0,
+        maxLife: 0.8 + Math.random() * 0.9,
+      });
+    }
+  }
+  for (let i = heatParts.length - 1; i >= 0; i--) {
+    const p = heatParts[i];
+    p.age += dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.z += p.vz * dt;
+    p.vy *= 0.995;
+    if (p.age > p.maxLife) {
+      heatParts[i] = heatParts[heatParts.length - 1];
+      heatParts.pop();
+    }
+  }
+  if (heatParts.length > MAX_H) heatParts.splice(0, heatParts.length - MAX_H);
+  const nh = heatParts.length;
+  for (let i = 0; i < nh; i++) {
+    const p = heatParts[i];
+    const a01 = Math.max(0, 1 - p.age / p.maxLife);
+    const j = i * 3;
+    hPositions[j]     = p.x;
+    hPositions[j + 1] = p.y;
+    hPositions[j + 2] = p.z;
+    // цвет: от ярко-жёлтого к тускло-красному при старении, модулированный нагревом
+    const t = p.age / p.maxLife;
+    const r = (1.0) * a01;
+    const g = (0.65 - 0.35 * t) * a01;
+    const b = (0.20 - 0.20 * t) * a01;
+    hColors[j]     = r * (0.6 + 0.4 * kVis);
+    hColors[j + 1] = g * (0.6 + 0.4 * kVis);
+    hColors[j + 2] = b * (0.6 + 0.4 * kVis);
+    hSizes[i] = 0.0025 + 0.0020 * kVis;
+  }
+  hGeom.setDrawRange(0, nh);
+  hGeom.attributes.position.needsUpdate = true;
+  hGeom.attributes.color.needsUpdate    = true;
+  hGeom.attributes.size.needsUpdate     = true;
+  hPoints.visible = state.showHeat;
+  ePoints.visible = state.showElectrons;
+
+  // авто-вращение
+  if (state.autoRotate) {
+    const ang = dt * 0.35;
+    const cA = Math.cos(ang), sA = Math.sin(ang);
+    const px = camera.position.x, pz = camera.position.z;
+    camera.position.x = px * cA - pz * sA;
+    camera.position.z = px * sA + pz * cA;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+
+  // HUD
+  document.getElementById('hudTop').textContent =
+    `U = ${(U >= 0 ? '+' : '') + U.toFixed(2)} В    ` +
+    `R = ${rFormat(R)}    ` +
+    `I = ${(I >= 0 ? '+' : '') + iFormat(I)}`;
+  document.getElementById('hudBot').textContent =
+    `P = ${pFormat(P)}    ` +
+    `θ = ${(tempK * 100).toFixed(0)}%    ` +
+    `e⁻ = ${ne}`;
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ---------- управление ----------
+const $ = (id) => document.getElementById(id);
+const ctlU = $('ctlU');
+const lblU = $('lblU');
+const ctlR = $('ctlR');
+const lblR = $('lblR');
+
+function syncU() {
+  state.U = ctlU.value / 100;
+  lblU.textContent = (state.U >= 0 ? '+' : '') + state.U.toFixed(2) + ' В';
+  // обновим направление батареи
+  buildCircuit();
+}
+ctlU.addEventListener('input', syncU);
+syncU();
+
+// слайдер 0..1000 → R = 10^(1 + 5*s/1000): 10 Ω … 1 МΩ (лог-шкала)
+function sliderToR(s)  { return Math.pow(10, 1 + 5 * s / 1000); }
+function rToSlider(R)  {
+  return Math.round(Math.max(0, Math.min(1000,
+    (Math.log10(Math.max(1, R)) - 1) * 1000 / 5)));
+}
+
+function syncR() {
+  state.R = sliderToR(+ctlR.value || 0);
+  lblR.textContent = rFormat(state.R);
+  $('ctlPreset').value = ''; // сбрасываем "пресет"
+  buildResistor(); // обновим цвета полос
+}
+ctlR.addEventListener('input', syncR);
+syncR();
+
+$('ctlPreset').addEventListener('change', e => {
+  const v = +e.target.value || 0;
+  if (!v) return;
+  state.R = v;
+  ctlR.value = rToSlider(v);
+  lblR.textContent = rFormat(state.R);
+  buildResistor();
+});
+
+$('btnRev').addEventListener('click', () => {
+  state.U = -state.U;
+  ctlU.value = Math.round(state.U * 100);
+  lblU.textContent = (state.U >= 0 ? '+' : '') + state.U.toFixed(2) + ' В';
+  buildCircuit();
+});
+$('btnZero').addEventListener('click', () => {
+  state.U = 0;
+  ctlU.value = 0;
+  lblU.textContent = '+0.00 В';
+  buildCircuit();
+});
+$('chkAuto').addEventListener('change',      e => { state.autoRotate   = e.target.checked; });
+$('chkHeat').addEventListener('change',      e => { state.showHeat     = e.target.checked; });
+$('chkInner').addEventListener('change',     e => { state.showInner    = e.target.checked; });
+$('chkElectrons').addEventListener('change', e => { state.showElectrons= e.target.checked; });
+</script>
+</body>
+</html>
