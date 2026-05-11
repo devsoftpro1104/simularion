@@ -258,6 +258,10 @@
         <input id="chkElectrons" type="checkbox" checked>
         <label for="chkElectrons">показывать электроны</label>
       </div>
+      <div class="checkrow">
+        <input id="chkBands" type="checkbox">
+        <label for="chkBands">показывать кольца</label>
+      </div>
     </div>
 
     <div class="group">
@@ -308,6 +312,8 @@ const state = {
   showHeat: true,
   showInner: true,
   showElectrons: true,
+  showBands: false,
+  densitySmoothed: 0.45, // плавная переменная: плотность резистивного слоя 0..1
   lastT: performance.now() / 1000,
 };
 
@@ -435,7 +441,7 @@ scene.add(heatLight);
 // Все размеры в метрах. Резистор оси X, корпус в центре.
 const BODY_LEN = 0.016;   // 16 мм длина корпуса
 const BODY_R   = 0.0028;  // 2.8 мм радиус корпуса
-const LEAD_R   = 0.00040; // 0.4 мм радиус ножки
+const LEAD_R   = 0.00060; // 0.6 мм радиус ножки
 const LEAD_LEN = 0.025;   // 25 мм длина ножки слева/справа
 const BAND_W   = 0.0015;  // ширина цветной полосы
 const BUS_Y    = -0.030;  // высота шины (батарея)
@@ -472,11 +478,13 @@ const batteryNegMat = new THREE.MeshStandardMaterial({
 
 // ---------- корпус с полосами ----------
 const bandMaterials = []; // ссылки на материалы полос — динамически обновляем
+let bandsGroupRef = null; // подгруппа полос — для быстрого toggle видимости
 
 function buildResistor() {
   bodyGroup.clear();
   leadsGroup.clear();
   bandMaterials.length = 0;
+  bandsGroupRef = null;
 
   // корпус (цилиндр со слегка скруглёнными торцами через два конуса)
   const bodyGeom = new THREE.CylinderGeometry(BODY_R, BODY_R, BODY_LEN, 28, 1, false);
@@ -518,6 +526,7 @@ function buildResistor() {
     document.getElementById(elBands[i]).style.background = cols[i].css;
   }
 
+  const bandsGroup = new THREE.Group();
   for (let i = 0; i < 4; i++) {
     const bMat = new THREE.MeshStandardMaterial({
       color: cols[i].hex,
@@ -532,8 +541,11 @@ function buildResistor() {
     bGeom.rotateZ(Math.PI / 2);
     const ring = new THREE.Mesh(bGeom, bMat);
     ring.position.x = bandXs[i];
-    bodyGroup.add(ring);
+    bandsGroup.add(ring);
   }
+  bandsGroup.visible = state.showBands;
+  bodyGroup.add(bandsGroup);
+  bandsGroupRef = bandsGroup;
 
   // ножки (выводы) — цилиндры по оси X
   const leadGeom = new THREE.CylinderGeometry(LEAD_R, LEAD_R, LEAD_LEN, 14);
@@ -559,6 +571,8 @@ const atomPhZ   = [];
 const atomHot   = []; // временный "перегрев" атома после столкновения с электроном
 let   atomMesh  = null;
 let   atomMat   = null;
+let   coreMesh  = null;
+let   coreMatRef= null;
 const _atomMtx  = new THREE.Matrix4();
 const _atomQuat = new THREE.Quaternion();
 const _atomScale= new THREE.Vector3(1, 1, 1);
@@ -589,6 +603,8 @@ function buildInner() {
   const core = new THREE.Mesh(coreGeom, coreMat);
   core.renderOrder = -1;
   innerGroup.add(core);
+  coreMesh = core;
+  coreMatRef = coreMat;
 
   // Атомы решётки — почти регулярная сетка с лёгким "беспорядком".
   // Распределяем по объёму цилиндра радиуса BODY_R*0.55, длины BODY_LEN*0.92.
@@ -638,7 +654,7 @@ function buildCircuit() {
   wiresGroup.clear();
 
   // нижняя шина и батарея — как в capacitor.html
-  const wireR = 0.00050;
+  const wireR = 0.00075;
 
   const makeTube = (pts, mat) => {
     const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
@@ -794,7 +810,7 @@ function samplePath(s) {
 }
 
 // ---------- электроны (Points) ----------
-const MAX_E = 1200;
+const MAX_E = 2500;
 const eGeom = new THREE.BufferGeometry();
 const ePositions = new Float32Array(MAX_E * 3);
 const eColors    = new Float32Array(MAX_E * 3);
@@ -808,9 +824,10 @@ function makeParticleTexture() {
   c.width = c.height = 64;
   const g = c.getContext('2d');
   const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0.00, 'rgba(255,255,250,1.0)');
-  grad.addColorStop(0.22, 'rgba(220,235,255,0.85)');
-  grad.addColorStop(0.55, 'rgba(120,170,230,0.35)');
+  grad.addColorStop(0.00, 'rgba(255,255,255,1.00)');
+  grad.addColorStop(0.18, 'rgba(235,245,255,0.95)');
+  grad.addColorStop(0.45, 'rgba(160,200,255,0.55)');
+  grad.addColorStop(0.80, 'rgba(80,140,220,0.15)');
   grad.addColorStop(1.00, 'rgba(0,0,0,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, 64, 64);
@@ -1016,9 +1033,10 @@ function tick(now) {
           // вспышка в точке столкновения
           spawnFlash(collX, p.targetY, p.targetZ,
             0.5 + 0.7 * Inorm + 0.8 * tempK);
-          // ближайший атом получает кратковременный "перегрев"
+          // ближайший видимый атом получает кратковременный "перегрев"
+          const nAtoms = atomMesh ? atomMesh.count : atomHome.length;
           let bestIdx = -1, bestD2 = 1e9;
-          for (let k = 0; k < atomHome.length; k++) {
+          for (let k = 0; k < nAtoms; k++) {
             const h = atomHome[k];
             const dx = h.x - collX;
             const dy = h.y - p.targetY;
@@ -1059,15 +1077,17 @@ function tick(now) {
   }
   // спавн новых электронов пропорционально току
   if (Inorm > 0.001 && sign !== 0 && state.showElectrons) {
-    spawnAcc += 400 * Inorm * dt;
+    // базовый поток (даже при малых токах достаточно частиц для видимого "ручейка")
+    // + добавка пропорциональная току
+    spawnAcc += (140 + 700 * Inorm) * dt;
     let nSpawn = spawnAcc | 0;
-    if (nSpawn > 18) nSpawn = 18;
+    if (nSpawn > 28) nSpawn = 28;
     spawnAcc -= nSpawn;
     while (nSpawn-- > 0) {
       electrons.push({
         t: Math.random(),
         age: 0,
-        maxLife: 1.0 + Math.random() * 1.8,
+        maxLife: 2.2 + Math.random() * 2.5,
         dispY: 0, dispZ: 0,
         startY: 0, startZ: 0,
         targetY: 0, targetZ: 0,
@@ -1095,15 +1115,17 @@ function tick(now) {
     // при движении внутри резистора цвет немного теплее (имитация трения)
     const inResistor = (p.t >= resistorSegStart && p.t <= resistorSegEnd);
     if (inResistor) {
-      eColors[j]     = (0.70 + 0.30 * tempK) * a01;
-      eColors[j + 1] = (0.80 - 0.20 * tempK) * a01;
-      eColors[j + 2] = (1.00 - 0.60 * tempK) * a01;
+      eColors[j]     = (1.05 + 0.40 * tempK) * a01;
+      eColors[j + 1] = (1.15 - 0.20 * tempK) * a01;
+      eColors[j + 2] = (1.50 - 0.80 * tempK) * a01;
+      eSizes[i]      = 0.0028 + 0.0012 * Inorm;
     } else {
-      eColors[j]     = 0.55 * a01;
-      eColors[j + 1] = 0.78 * a01;
-      eColors[j + 2] = 1.00 * a01;
+      // в проводах — крупнее и ярче, чтобы поток был хорошо виден
+      eColors[j]     = 0.95 * a01;
+      eColors[j + 1] = 1.25 * a01;
+      eColors[j + 2] = 1.70 * a01;
+      eSizes[i]      = 0.0040 + 0.0020 * Inorm;
     }
-    eSizes[i] = 0.0016 + 0.0008 * Inorm;
   }
   eGeom.setDrawRange(0, ne);
   eGeom.attributes.position.needsUpdate = true;
@@ -1141,13 +1163,44 @@ function tick(now) {
   heatLight.intensity = kVis * 0.018;
   heatLight.color.copy(hc);
 
+  // ---------- плотность резистивного слоя (зависит от R) ----------
+  // больше R → плотнее слой (больше видимых атомов, толще / темнее стержень);
+  // меньше R → слой "тает", атомов мало, стержень узкий и прозрачный.
+  // log-маппинг по диапазону 10 Ω … 1 МΩ.
+  const Lr = Math.log10(Math.max(1, state.R));
+  let densityTarget = (Lr - 1.0) / 5.0;          // 0 при 10 Ω, 1 при 1 МΩ
+  densityTarget = Math.max(0.08, Math.min(1.0, densityTarget));
+  // плавно тянем сглаженную плотность к цели
+  state.densitySmoothed += (densityTarget - state.densitySmoothed)
+                         * (1 - Math.exp(-dt / 0.35));
+  const dens = state.densitySmoothed;
+
+  // 1) видимое количество атомов (атомы расставлены в случайном порядке,
+  //    так что простое усечение count даёт визуально равномерное разрежение).
+  if (atomMesh) {
+    atomMesh.count = Math.max(8, Math.round(8 + (ATOM_COUNT - 8) * dens));
+  }
+  // 2) стержень резистивного слоя — толстеет и темнеет с ростом R.
+  if (coreMesh && coreMatRef) {
+    const radial = 0.45 + 0.85 * dens; // 0.45..1.30 от базового радиуса
+    coreMesh.scale.set(1, radial, radial);
+    coreMatRef.opacity = (0.10 + 0.55 * dens) * (state.showInner ? 1 : 0);
+    // при большой плотности слой темнее и теплее
+    coreMatRef.color.setRGB(
+      0.20 + 0.10 * dens,
+      0.10 + 0.06 * dens,
+      0.06 + 0.04 * dens,
+    );
+  }
+
   // решётка: каждый атом колеблется около узла, амплитуда ∝ температуре.
   // Атом, недавно "сбитый" электроном, на короткое время колеблется сильнее
   // и светится ярче — наглядно показывает передачу энергии решётке.
   if (atomMesh && atomMat) {
     const baseAmp = BODY_R * 0.025 * (0.20 + kVis * 1.10);
     const tSec = tNow;
-    for (let k = 0; k < atomHome.length; k++) {
+    const visN = atomMesh.count;
+    for (let k = 0; k < visN; k++) {
       atomHot[k] = Math.max(0, atomHot[k] - dt * 2.2);
       const home = atomHome[k];
       const f    = atomFreq[k];
@@ -1349,6 +1402,10 @@ $('chkAuto').addEventListener('change',      e => { state.autoRotate   = e.targe
 $('chkHeat').addEventListener('change',      e => { state.showHeat     = e.target.checked; });
 $('chkInner').addEventListener('change',     e => { state.showInner    = e.target.checked; });
 $('chkElectrons').addEventListener('change', e => { state.showElectrons= e.target.checked; });
+$('chkBands').addEventListener('change',     e => {
+  state.showBands = e.target.checked;
+  if (bandsGroupRef) bandsGroupRef.visible = state.showBands;
+});
 </script>
 </body>
 </html>
