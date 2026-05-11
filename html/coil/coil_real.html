@@ -398,6 +398,8 @@ const state = {
   lastT: performance.now() / 1000,
   autoRotate: false,
   showLines: true,
+  decaying: false,    // self-induction exponential current decay in progress
+  decayTau: 1.2,      // seconds — visual time constant of the decay
 };
 
 function rebuildFieldLineData() {
@@ -880,6 +882,25 @@ function tick(now) {
   const dt = Math.max(1e-6, Math.min(0.1, tNow - state.lastT));
   state.lastT = tNow;
 
+  // self-induction decay: when the circuit is "opened" the current does not
+  // drop to zero instantly — the inductor's back-EMF keeps it flowing while it
+  // decays as I(t) = I0 * exp(-t / τ). Continues until |I| is small enough.
+  if (state.decaying) {
+    const prevSign = state.I > 1e-6 ? 1 : (state.I < -1e-6 ? -1 : 0);
+    state.I *= Math.exp(-dt / state.decayTau);
+    if (Math.abs(state.I) < 0.02) {
+      state.I = 0;
+      state.decaying = false;
+    }
+    ctlI.value = Math.round(state.I * 100);
+    lblI.textContent = (state.I >= 0 ? '+' : '') + state.I.toFixed(2) + ' А';
+    const newSign = state.I > 1e-6 ? 1 : (state.I < -1e-6 ? -1 : 0);
+    if (newSign !== prevSign) {
+      buildPoles();
+      buildArrows();
+    }
+  }
+
   const Iabs = Math.abs(state.I);
   const Inorm = Math.min(1.0, Iabs / state.Iref);
   const sign = state.I >= 0 ? 1.0 : -1.0;
@@ -995,12 +1016,14 @@ function tick(now) {
   // HUD
   const Bc = bOnAxisExact(state.I);
   const Bi = bIdeal(state.I);
+  const decayTag = state.decaying ? `    · э.д.с. самоиндукции (τ = ${state.decayTau.toFixed(1)} с)` : '';
   document.getElementById('hudTop').textContent =
     `I = ${state.I >= 0 ? '+' : ''}${state.I.toFixed(2)} А    ` +
     `R = ${(state.R * 1000).toFixed(1)} мм    ` +
     `L = ${(state.L * 1000).toFixed(1)} мм    ` +
     `N = ${state.N}    ` +
-    `линий = ${state.fieldLines.length}`;
+    `линий = ${state.fieldLines.length}` +
+    decayTag;
   document.getElementById('hudBot').textContent =
     `|B|(0,0) = ${(Bc * 1e3 >= 0 ? '+' : '')}${(Bc * 1e3).toPrecision(4)} мТл    ` +
     `B_ид = µ₀nI = ${(Bi * 1e3 >= 0 ? '+' : '')}${(Bi * 1e3).toPrecision(4)} мТл    ` +
@@ -1025,7 +1048,8 @@ function syncILabel() {
     buildArrows();
   }
 }
-ctlI.addEventListener('input', syncILabel);
+// manual slider input always cancels any in-progress self-induction decay
+ctlI.addEventListener('input', () => { state.decaying = false; syncILabel(); });
 syncILabel();
 
 // debounce heavy rebuilds (field-line tracing)
@@ -1058,10 +1082,33 @@ $('ctlPhi').addEventListener('input', e => {
   state.nPhi = v; buildFieldLineMeshes(); buildArrows();
 });
 
-$('btnOff').addEventListener('click', () => { ctlI.value = 0; syncILabel(); });
-$('btnRev').addEventListener('click', () => { ctlI.value = -ctlI.value; syncILabel(); });
-$('btnMaxP').addEventListener('click', () => { ctlI.value = 2000; syncILabel(); });
-$('btnMaxN').addEventListener('click', () => { ctlI.value = -2000; syncILabel(); });
+// "Выключить ток" — simulate inductor opening: I decays exponentially
+// (self-induction back-EMF resists the abrupt change). Already-zero current
+// is a no-op; very small currents snap to zero.
+$('btnOff').addEventListener('click', () => {
+  if (Math.abs(state.I) < 0.05) {
+    state.decaying = false;
+    ctlI.value = 0;
+    syncILabel();
+  } else {
+    state.decaying = true;
+  }
+});
+$('btnRev').addEventListener('click', () => {
+  state.decaying = false;
+  ctlI.value = -ctlI.value;
+  syncILabel();
+});
+$('btnMaxP').addEventListener('click', () => {
+  state.decaying = false;
+  ctlI.value = 2000;
+  syncILabel();
+});
+$('btnMaxN').addEventListener('click', () => {
+  state.decaying = false;
+  ctlI.value = -2000;
+  syncILabel();
+});
 
 $('chkAuto').addEventListener('change', e => { state.autoRotate = e.target.checked; });
 $('chkLines').addEventListener('change', e => { state.showLines = e.target.checked; });

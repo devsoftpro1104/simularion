@@ -177,13 +177,13 @@
       <h2>Параметры</h2>
       <div class="row">
         <label>Напряж. U:</label>
-        <input id="ctlV" type="range" min="-2000" max="2000" value="500" step="1">
-        <span class="val" id="lblV">+5.00 В</span>
+        <input id="ctlV" type="range" min="-2000" max="2000" value="0" step="1">
+        <span class="val" id="lblV">+0.00 В</span>
       </div>
       <div class="row">
         <label>Темп. T:</label>
-        <input id="ctlT" type="range" min="0" max="100" value="35" step="1">
-        <span class="val" id="lblT">0.35</span>
+        <input id="ctlT" type="range" min="0" max="100" value="3" step="1">
+        <span class="val" id="lblT">0.03</span>
       </div>
       <div class="row">
         <label>Длина L:</label>
@@ -192,12 +192,12 @@
       </div>
       <div class="row">
         <label>Радиус R:</label>
-        <input id="ctlR" type="number" min="5" max="50" step="1" value="12">
+        <input id="ctlR" type="number" min="5" max="50" step="1" value="20">
         <span class="val">мм</span>
       </div>
       <div class="row">
         <label>Электронов:</label>
-        <input id="ctlN" type="number" min="50" max="1500" step="50" value="600">
+        <input id="ctlN" type="number" min="50" max="1500" step="50" value="300">
         <span class="val"></span>
       </div>
     </div>
@@ -216,8 +216,12 @@
         <label for="chkCurrent">показывать ток I</label>
       </div>
       <div class="checkrow">
-        <input id="chkTrails" type="checkbox" checked>
+        <input id="chkTrails" type="checkbox">
         <label for="chkTrails">шлейфы движения</label>
+      </div>
+      <div class="checkrow">
+        <input id="chkLattice" type="checkbox" checked>
+        <label for="chkLattice">крист. решётка (ионы +)</label>
       </div>
       <div class="checkrow">
         <input id="chkAuto" type="checkbox">
@@ -232,6 +236,12 @@
         проводника. У них <b>тепловое</b> хаотическое движение
         плюс небольшой <b>дрейф</b> в сторону <span class="pos">+</span>
         полюса (электрон отрицателен, его притягивает плюс).<br><br>
+        Красные шарики — <b>ионы кристаллической решётки</b>
+        металла (атомы, отдавшие электрон в «электронный газ»).
+        Они закреплены в узлах решётки и <b>колеблются</b> около
+        положений равновесия — амплитуда растёт с температурой
+        <b>T</b>. Именно об эти ионы электроны «спотыкаются» —
+        это и есть электрическое сопротивление.<br><br>
         <b>Жёлтые стрелки</b> — направление поля <b>E</b> внутри
         провода (от <span class="pos">+</span> к <span class="neg">−</span>).<br>
         <b>Зелёная стрелка</b> — направление тока <b>I</b>
@@ -248,6 +258,7 @@
     <div class="hud hud-bot" id="hudBot"></div>
     <div class="legend">
       <span class="sw" style="background:#6ea8ff"></span>электроны e<sup>−</sup><br>
+      <span class="sw" style="background:#d64545"></span>ионы решётки +<br>
       <span class="sw" style="background:#ffd060"></span>поле E<br>
       <span class="sw" style="background:#59c065"></span>ток I
     </div>
@@ -265,15 +276,16 @@ const MAX_N = 1500;
 const K_HIST = 4;     // history length for motion trails
 
 const state = {
-  V: 5.0,
+  V: 0.0,
   Vref: 20.0,
   L: 0.20,
-  R: 0.012,
-  N: 600,
-  temperature: 0.35,
+  R: 0.020,
+  N: 300,
+  temperature: 0.03,
   showField: true,
   showCurrent: true,
-  showTrails: true,
+  showTrails: false,
+  showLattice: true,
   autoRotate: false,
   lastT: performance.now() / 1000,
   // physics buffers (sized MAX_N)
@@ -502,6 +514,74 @@ function updatePolarity() {
   }
 }
 
+// ---------- crystal lattice of positive metal ions ----------
+const latticeGroup = new THREE.Group();
+scene.add(latticeGroup);
+let latticeMesh = null;
+let latticeBase = null;   // Float32Array of equilibrium positions
+let latticeCount = 0;
+let latticeSpacing = 0.005;
+
+function buildLattice() {
+  latticeGroup.clear();
+  if (latticeMesh) { latticeMesh.geometry.dispose(); latticeMesh.material.dispose(); }
+  latticeMesh = null;
+  latticeBase = null;
+  latticeCount = 0;
+
+  const L = state.L, R = state.R;
+  // target density ~ 400 ions for the visible segment, regardless of size
+  const targetN = 400;
+  const vol = Math.PI * R * R * L;
+  const a = Math.max(0.0015, Math.cbrt(vol / targetN));
+  latticeSpacing = a;
+  const ionR = Math.min(a * 0.28, R * 0.12);
+
+  const positions = [];
+  const nx = Math.max(1, Math.floor(L / a));
+  const offX = -(nx - 1) * a / 2;
+  const nyz = Math.ceil(R / a) + 1;
+  const rLimit = R * 0.93;
+  const rLimitSq = rLimit * rLimit;
+
+  for (let ix = 0; ix < nx; ix++) {
+    const x = offX + ix * a;
+    // staggered slices for a denser, BCC-like packing
+    const stagger = (ix & 1) ? a * 0.5 : 0;
+    for (let iy = -nyz; iy <= nyz; iy++) {
+      const y = iy * a + stagger;
+      if (y * y > rLimitSq) continue;
+      for (let iz = -nyz; iz <= nyz; iz++) {
+        const z = iz * a + stagger;
+        if (y * y + z * z <= rLimitSq) {
+          positions.push(x, y, z);
+        }
+      }
+    }
+  }
+  latticeCount = positions.length / 3;
+  if (latticeCount === 0) return;
+  latticeBase = new Float32Array(positions);
+
+  const geom = new THREE.SphereGeometry(ionR, 14, 10);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xd64545,
+    emissive: 0x551515,
+    emissiveIntensity: 0.55,
+    metalness: 0.30,
+    roughness: 0.42,
+  });
+  latticeMesh = new THREE.InstancedMesh(geom, mat, latticeCount);
+  latticeMesh.frustumCulled = false;
+  const mtx = new THREE.Matrix4();
+  for (let i = 0; i < latticeCount; i++) {
+    mtx.makeTranslation(latticeBase[i*3], latticeBase[i*3+1], latticeBase[i*3+2]);
+    latticeMesh.setMatrixAt(i, mtx);
+  }
+  latticeMesh.instanceMatrix.needsUpdate = true;
+  latticeGroup.add(latticeMesh);
+}
+
 // ---------- arrows (E-field & conventional current) ----------
 function makeArrow(length, color) {
   const grp = new THREE.Group();
@@ -663,22 +743,65 @@ trailsLine.frustumCulled = false;
 scene.add(trailsLine);
 
 // ---------- build everything ----------
+function fitCameraToScene(force = false) {
+  const L = state.L, R = state.R;
+  // bbox of visible scene: wire, terminals (W=0.014, extra +R*0.6 for sprite),
+  // and current arrow above the wire (~R+0.020+R*0.9)
+  const termW = 0.014;
+  const halfX = L / 2 + termW + R * 0.6 + 0.004;
+  const halfY = Math.max(R * 1.5, R + 0.020 + R * 0.9) + 0.004;
+  const halfZ = R * 1.5 + 0.004;
+
+  const fovV   = camera.fov * Math.PI / 180;
+  const aspect = Math.max(camera.aspect || 1, 0.4);
+  const tanV = Math.tan(fovV / 2);
+  const tanH = tanV * aspect;
+
+  // direction from origin toward camera (preserve view angle)
+  const dir = camera.position.clone();
+  if (dir.lengthSq() < 1e-8) dir.set(0.32, 0.18, 0.30);
+  dir.normalize();
+
+  // camera-space basis (right, up perpendicular to viewing axis)
+  const upWorld = camera.up.clone().normalize();
+  const right = new THREE.Vector3().crossVectors(upWorld, dir);
+  if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(dir, right).normalize();
+
+  // tight fit: distance must satisfy |x|/tanH + alongDir <= d for every bbox corner
+  let dNeed = 0;
+  for (let sx = -1; sx <= 1; sx += 2)
+    for (let sy = -1; sy <= 1; sy += 2)
+      for (let sz = -1; sz <= 1; sz += 2) {
+        const px = sx * halfX, py = sy * halfY, pz = sz * halfZ;
+        const xView = Math.abs(px * right.x + py * right.y + pz * right.z);
+        const yView = Math.abs(px * up.x    + py * up.y    + pz * up.z);
+        const along =          px * dir.x   + py * dir.y   + pz * dir.z;
+        const d = Math.max(xView / tanH, yView / tanV) + along;
+        if (d > dNeed) dNeed = d;
+      }
+  const dist = dNeed * 1.02;
+
+  const cur = camera.position.length();
+  if (force || cur < dist * 0.4 || cur > dist * 2.0) {
+    camera.position.copy(dir.multiplyScalar(dist));
+  }
+  controls.target.set(0, 0, 0);
+  controls.minDistance = Math.max(0.02, dist * 0.15);
+  controls.maxDistance = Math.max(0.6, dist * 4.0);
+  controls.update();
+}
+
 function rebuildScene() {
   buildWire();
   buildTerminals();
+  buildLattice();
   buildFieldArrows();
   buildCurrentArrow();
   updatePolarity();
   updateArrows();
-
-  const span = Math.max(state.L * 0.7, state.R * 4);
-  const targetDist = span * 2.6;
-  const cur = camera.position.length();
-  if (cur < targetDist * 0.4 || cur > targetDist * 2.0) {
-    camera.position.setLength(targetDist);
-  }
-  controls.minDistance = Math.max(0.02, targetDist * 0.18);
-  controls.maxDistance = Math.max(0.6, targetDist * 3.0);
+  fitCameraToScene();
 }
 rebuildScene();
 
@@ -692,9 +815,11 @@ function resize() {
   camera.updateProjectionMatrix();
   particleMaterial.uniforms.uPxPerUnit.value =
     h * 0.5 / Math.tan(camera.fov * 0.5 * Math.PI / 180);
+  fitCameraToScene(false);
 }
 new ResizeObserver(resize).observe(stage);
 resize();
+fitCameraToScene(true);
 
 // ---------- physics constants (tuned for visible drift, dimensionless) ----------
 const DRIFT_COEF     = 0.060;   // a_drift = DRIFT_COEF * V  (m/s²)
@@ -822,6 +947,27 @@ function tick(now) {
     trailsLine.visible = false;
   }
 
+  // lattice thermal vibration (ions oscillate around equilibrium nodes)
+  if (latticeMesh && state.showLattice && latticeCount > 0) {
+    const amp = state.temperature * latticeSpacing * 0.22;
+    const mtx = new THREE.Matrix4();
+    const tt = tNow * 6.0;
+    for (let i = 0; i < latticeCount; i++) {
+      const ph = i * 1.73;
+      const dx = Math.sin(tt + ph) * amp;
+      const dy = Math.sin(tt * 1.27 + ph * 0.9 + 1.1) * amp;
+      const dz = Math.sin(tt * 0.81 + ph * 1.3 + 2.2) * amp;
+      mtx.makeTranslation(
+        latticeBase[i*3]     + dx,
+        latticeBase[i*3 + 1] + dy,
+        latticeBase[i*3 + 2] + dz
+      );
+      latticeMesh.setMatrixAt(i, mtx);
+    }
+    latticeMesh.instanceMatrix.needsUpdate = true;
+  }
+  latticeGroup.visible = state.showLattice;
+
   // dynamic visuals
   updatePolarity();
   updateArrows();
@@ -905,6 +1051,7 @@ $('btnMaxN').addEventListener('click', () => { ctlV.value = -2000; syncV(); });
 $('chkField').addEventListener('change',   e => { state.showField   = e.target.checked; });
 $('chkCurrent').addEventListener('change', e => { state.showCurrent = e.target.checked; });
 $('chkTrails').addEventListener('change',  e => { state.showTrails  = e.target.checked; });
+$('chkLattice').addEventListener('change', e => { state.showLattice = e.target.checked; });
 $('chkAuto').addEventListener('change',    e => { state.autoRotate  = e.target.checked; });
 </script>
 </body>
